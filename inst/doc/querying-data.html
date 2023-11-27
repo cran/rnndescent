@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Querying Data</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+<style type="text/css">
+
+div.csl-bib-body { }
+div.csl-entry {
+clear: both;
+}
+.hanging div.csl-entry {
+margin-left:2em;
+text-indent:-2em;
+}
+div.csl-left-margin {
+min-width:2em;
+float:left;
+}
+div.csl-right-inline {
+margin-left:2em;
+padding-left:1em;
+}
+div.csl-indent {
+margin-left: 2em;
+}
+</style>
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Querying Data</h1>
+
+
+
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(rnndescent)</span></code></pre></div>
+<p>The usual pattern of usage for approximate nearest neighbors methods
+is:</p>
+<ol style="list-style-type: decimal">
+<li>Build some kind of index with input data.</li>
+<li>Query that index with new data to find the nearest neighbors of your
+query.</li>
+</ol>
+<p>This is how e.g. <a href="https://github.com/spotify/annoy">Annoy</a>
+and <a href="https://github.com/nmslib/hnswlib">hnswlib</a> work. If you
+want just the k-nearest neighbors of the data you used to build the
+index in step 1, then you can just pass that data as the query in step
+2, but <code>rnndescent</code> provides some specialized functions for
+this case that are slightly more efficient, see for example
+<code>nnd_knn</code> and <code>rpf_knn</code>. Nonetheless, querying the
+index with the original data can produce a more accurate result. See the
+<a href="hubness.Rmd">hubness</a> vignette for an example of that.</p>
+<p>Below we will see some of the options that <code>rnndescent</code>
+has for querying an index.</p>
+<p>For convenience, I will use all the even rows of the
+<code>iris</code> data to build an index, and search using the odd
+rows:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>iris_even <span class="ot">&lt;-</span> iris[<span class="fu">seq_len</span>(<span class="fu">nrow</span>(iris)) <span class="sc">%%</span> <span class="dv">2</span> <span class="sc">==</span> <span class="dv">0</span>, ]</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>iris_odd <span class="ot">&lt;-</span> iris[<span class="fu">seq_len</span>(<span class="fu">nrow</span>(iris)) <span class="sc">%%</span> <span class="dv">2</span> <span class="sc">==</span> <span class="dv">1</span>, ]</span></code></pre></div>
+<div id="brute-force" class="section level2">
+<h2>Brute Force</h2>
+<p>If your dataset is small enough, you can just use brute force to find
+the neighbors. No index to build, no worry about how approximate the
+results are:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>brute_nbrs <span class="ot">&lt;-</span> <span class="fu">brute_force_knn_query</span>(</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>  <span class="at">query =</span> iris_odd,</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>  <span class="at">reference =</span> iris_even,</span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a>  <span class="at">k =</span> <span class="dv">15</span></span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a>)</span></code></pre></div>
+<p>The format of <code>brute_nbrs</code> is the usual k-nearest
+neighbors graph format, a list of two matrices, both of dimension
+<code>(nrow(iris_odd), k)</code>. The first matrix, <code>idx</code>
+contains the indices of the nearest neighbors, and the second matrix,
+<code>dist</code> contains the distances to those neighbors (here I’ll
+just show the first five results per row):</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="fu">lapply</span>(brute_nbrs, <span class="cf">function</span>(m) {</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>  <span class="fu">head</span>(m[, <span class="dv">1</span><span class="sc">:</span><span class="dv">5</span>])</span>
+<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a>})</span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="co">#&gt; $idx</span></span>
+<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="co">#&gt;      [,1] [,2] [,3] [,4] [,5]</span></span>
+<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a><span class="co">#&gt; [1,]    9   20   14    4   25</span></span>
+<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a><span class="co">#&gt; [2,]   24    2   23   15    1</span></span>
+<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a><span class="co">#&gt; [3,]   19    9    4   20   14</span></span>
+<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="co">#&gt; [4,]   24    6   15    2   19</span></span>
+<span id="cb4-10"><a href="#cb4-10" tabindex="-1"></a><span class="co">#&gt; [5,]    2    7   24   23   15</span></span>
+<span id="cb4-11"><a href="#cb4-11" tabindex="-1"></a><span class="co">#&gt; [6,]   14   10    3   16   11</span></span>
+<span id="cb4-12"><a href="#cb4-12" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb4-13"><a href="#cb4-13" tabindex="-1"></a><span class="co">#&gt; $dist</span></span>
+<span id="cb4-14"><a href="#cb4-14" tabindex="-1"></a><span class="co">#&gt;           [,1]      [,2]      [,3]      [,4]      [,5]</span></span>
+<span id="cb4-15"><a href="#cb4-15" tabindex="-1"></a><span class="co">#&gt; [1,] 0.1000000 0.1414213 0.1414213 0.1732050 0.2236068</span></span>
+<span id="cb4-16"><a href="#cb4-16" tabindex="-1"></a><span class="co">#&gt; [2,] 0.1414213 0.2449490 0.2645753 0.3000001 0.3000002</span></span>
+<span id="cb4-17"><a href="#cb4-17" tabindex="-1"></a><span class="co">#&gt; [3,] 0.1414213 0.1732050 0.2236066 0.2449488 0.2449488</span></span>
+<span id="cb4-18"><a href="#cb4-18" tabindex="-1"></a><span class="co">#&gt; [4,] 0.2236068 0.3000002 0.3162278 0.3316627 0.4123106</span></span>
+<span id="cb4-19"><a href="#cb4-19" tabindex="-1"></a><span class="co">#&gt; [5,] 0.2999998 0.3464101 0.3605550 0.4242641 0.4690414</span></span>
+<span id="cb4-20"><a href="#cb4-20" tabindex="-1"></a><span class="co">#&gt; [6,] 0.2828429 0.3316626 0.3464102 0.3605551 0.3605553</span></span></code></pre></div>
+</div>
+<div id="random-projection-forests" class="section level2">
+<h2>Random Projection Forests</h2>
+<p>If you build a random projection forest with <code>rpf_build</code>,
+you can query it with <code>rpf_knn_query</code>:</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>rpf_index <span class="ot">&lt;-</span> <span class="fu">rpf_build</span>(iris_even)</span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>rpf_nbrs <span class="ot">&lt;-</span> <span class="fu">rpf_knn_query</span>(</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>  <span class="at">query =</span> iris_odd,</span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>  <span class="at">reference =</span> iris_even,</span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a>  <span class="at">forest =</span> rpf_index,</span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a>  <span class="at">k =</span> <span class="dv">15</span></span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a>)</span></code></pre></div>
+<p>See the <a href="random-partition-forests.html">Random Partition
+Forests vignette</a> for more.</p>
+</div>
+<div id="graph-search" class="section level2">
+<h2>Graph Search</h2>
+<p>See <span class="citation">(Dobson et al. 2023)</span> for an
+overview of graph search algorithms, which can be described as a greedy
+beam search over a graph: to find the nearest neighbors, you start at a
+candidate in the graph, find the distance from that candidate to the
+query point, and update the neighbor list of your query accordingly. If
+the candidate made it into the neighbor list of the query, this seems
+like a promising direction to go in, so add the candidate’s neighbors to
+the list of candidates to explore. Repeat this until such a time as you
+run out of candidates. You may want to explore the neighbors of the
+candidate even if it doesn’t make it onto the current neighbor list, if
+its distance is sufficiently small. How much tolerance you have for this
+controls how much back-tracking you do and hence how much exploration
+and the amount of time you spend in the search.</p>
+<p><code>graph_knn_query</code> implements this search. At the very
+least you must provide a <code>reference_graph</code> to search, the
+<code>reference</code> data that built the <code>reference_graph</code>
+(so we can calculate distances), <code>k</code> the number of neighbors
+you want, and of course the <code>query</code> data:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>graph_nbrs <span class="ot">&lt;-</span> <span class="fu">graph_knn_query</span>(</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>  <span class="at">query =</span> iris_odd,</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a>  <span class="at">reference =</span> iris_even,</span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a>  <span class="at">reference_graph =</span> rpf_nbrs,</span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a>  <span class="at">k =</span> <span class="dv">15</span></span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a>)</span></code></pre></div>
+<p>If you aren’t using the <code>metric = &quot;euclidean&quot;</code>, you should
+also provide the same <code>metric</code> that you used to build the
+<code>reference_graph</code>. The default <code>metric</code> is always
+<code>&quot;euclidean&quot;</code> for any function in <code>rnndescent</code> so
+it’s not provided in the examples here.</p>
+<p>There are some other parameters you will want to tweak in any real
+world case that merit some deeper discussion.</p>
+<div id="n_threads" class="section level3">
+<h3><code>n_threads</code></h3>
+<p><code>n_threads</code> controls how many threads to use in the
+search. Be aware that <code>graph_knn_query</code> is designed for
+<em>batch</em> parallelism, and each thread will be responsible for
+searching a subset of the <code>query</code> points. This means that in
+a streaming context, where queries to search are likely to arrive one at
+a time, you won’t get any speed up from using multiple threads.</p>
+</div>
+<div id="epsilon" class="section level3">
+<h3><code>epsilon</code></h3>
+<p><code>epsilon</code> controls how much exploration of the neighbors
+of a candidate to do, as suggested by <span class="citation">(Iwasaki
+and Miyazaki 2018)</span>. The default value is <code>0.1</code>, which
+is also the default of the <a href="https://github.com/yahoojapan/NGT/blob/main/python/README-ngtpy.md">NGT</a>
+library. The larger the value, the more back-tracking is permitted. The
+exact meaning of the value is related to how large a distance is
+considered “close enough” the current neighbor list of the query to be
+worth exploring.</p>
+<p><code>epsilon = 0.1</code> means that the query-candidate distance is
+allowed to be 10% larger than the largest distance in the neighbor list.
+If you set <code>epsilon = 0.2</code>, for example, then the
+query-candidate distance is allowed to be 20% higher than the largest
+distance in the neighbor list and so on. If you set
+<code>epsilon = 0</code> then you get a pure greedy search.</p>
+<p>It’s hard to give a general rule for what value to set, because it’s
+highly dependent on the distribution of distances in the dataset and
+that is determined by the distance metric and the dimensionality of the
+data itself. I recommend leaving this as the default, and only modifying
+it if you find that the search is unreasonably slow (in which case make
+<code>epsilon</code> smaller) or unreasonably inaccurate (in which case
+make <code>epsilon</code> larger). Yes, not very helpful I know. In the
+benchmarking done in <span class="citation">(Dobson et al. 2023)</span>
+using a similar back-tracking method, <code>epsilon = 0.25</code> was
+the maximum value used and in <span class="citation">(Wang et al.
+2021)</span> <code>epsilon = 0.1</code> was used.</p>
+</div>
+<div id="init" class="section level3">
+<h3><code>init</code></h3>
+<p>This controls how the search is initialized. If you don’t provide
+this, then <code>k</code> random neighbors per item in
+<code>query</code> will be generated for you.</p>
+<div id="neighbor-graph-input" class="section level4">
+<h4>Neighbor Graph Input</h4>
+<p>You may provide your own input for this. It should be in the neighbor
+graph format, i.e. a list of two matrices, <code>idx</code> and
+<code>dist</code>, as described above. Make sure that the
+<code>dist</code> matrix contains the distances using the same
+<code>metric</code> you will use in the search.</p>
+</div>
+<div id="neighbor-indices-only" class="section level4">
+<h4>Neighbor Indices Only</h4>
+<p>In fact, the <code>dist</code> matrix is optional. If you only
+provide the <code>idx</code> matrix, then the <code>dist</code> matrix
+will be calculated for you. If the <code>dist</code> matrix is already
+available to you and it was generated by <code>rnndescent</code> then
+there is no reason <em>not</em> to use it, but you could have neighbors
+that come from:</p>
+<ul>
+<li>another nearest neighbor package and for some reason you don’t have
+the distance</li>
+<li>or you have indices from a different metric that you nonetheless
+believe are a good guess for the “real” metric.</li>
+</ul>
+<p>A case where this might be worth experimenting with could be if you
+can cheaply binarize your input data, i.e. convert it to 0/1 then to
+<code>FALSE</code>/<code>TRUE</code>: you could then use the
+<code>hamming</code> metric or another binary-specialized metric on that
+input data. Even a brute force search can be very fast on this data.
+This could be a good way to get a good guess for the real data.</p>
+<p>This is a very contrived example with <code>iris</code>, but let’s do
+it anyway:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>numeric_iris <span class="ot">&lt;-</span> iris[, <span class="fu">sapply</span>(iris, is.numeric)]</span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>logical_iris <span class="ot">&lt;-</span> <span class="fu">sweep</span>(numeric_iris, <span class="dv">2</span>, <span class="fu">colMeans</span>(numeric_iris), <span class="st">&quot;&gt;&quot;</span>)</span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>logical_iris_even <span class="ot">&lt;-</span> logical_iris[<span class="fu">seq_len</span>(<span class="fu">nrow</span>(logical_iris)) <span class="sc">%%</span> <span class="dv">2</span> <span class="sc">==</span> <span class="dv">0</span>, ]</span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>logical_iris_odd <span class="ot">&lt;-</span> logical_iris[<span class="fu">seq_len</span>(<span class="fu">nrow</span>(logical_iris)) <span class="sc">%%</span> <span class="dv">2</span> <span class="sc">==</span> <span class="dv">1</span>, ]</span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a><span class="fu">head</span>(logical_iris_even)</span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a><span class="co">#&gt;      Sepal.Length Sepal.Width Petal.Length Petal.Width</span></span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a><span class="co">#&gt; [1,]        FALSE       FALSE        FALSE       FALSE</span></span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a><span class="co">#&gt; [2,]        FALSE        TRUE        FALSE       FALSE</span></span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a><span class="co">#&gt; [3,]        FALSE        TRUE        FALSE       FALSE</span></span>
+<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a><span class="co">#&gt; [4,]        FALSE        TRUE        FALSE       FALSE</span></span>
+<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a><span class="co">#&gt; [5,]        FALSE        TRUE        FALSE       FALSE</span></span>
+<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a><span class="co">#&gt; [6,]        FALSE        TRUE        FALSE       FALSE</span></span></code></pre></div>
+<p>Do a brute force search on the binarized data:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>iris_logical_brute_nbrs <span class="ot">&lt;-</span> <span class="fu">brute_force_knn_query</span>(</span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>  <span class="at">query =</span> logical_iris_odd,</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>  <span class="at">reference =</span> logical_iris_even,</span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>  <span class="at">k =</span> <span class="dv">15</span>,</span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a>  <span class="at">metric =</span> <span class="st">&quot;hamming&quot;</span></span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a>)</span></code></pre></div>
+<p>Then pass the indices of the brute force search to
+<code>graph_knn_query</code>, which will generate the Euclidean
+distances for you:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>graph_nbrs <span class="ot">&lt;-</span> <span class="fu">graph_knn_query</span>(</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>  <span class="at">query =</span> iris_odd,</span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a>  <span class="at">reference =</span> iris_even,</span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a>  <span class="at">reference_graph =</span> rpf_nbrs,</span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a>  <span class="at">init =</span> iris_logical_brute_nbrs<span class="sc">$</span>idx,</span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a>  <span class="at">k =</span> <span class="dv">15</span></span>
+<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a>)</span></code></pre></div>
+<p>Whether this is worth doing all depends on whether the time taken to
+binarize the data followed by the initial search on the binary data (it
+doesn’t have to be brute force) gives you a good enough guess to save
+time in the “real” search with <code>graph_knn_query</code>.</p>
+</div>
+<div id="forest-initialization" class="section level4">
+<h4>Forest initialization</h4>
+<p>If you have previously built an RP Forest with the data you may also
+use that to initialize the query. We can re-use <code>rpf_index</code>
+here.</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a>forest_init_nbrs <span class="ot">&lt;-</span> <span class="fu">graph_knn_query</span>(</span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>  <span class="at">query =</span> iris_odd,</span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>  <span class="at">reference =</span> iris_even,</span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a>  <span class="at">reference_graph =</span> rpf_nbrs,</span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>  <span class="at">init =</span> rpf_index,</span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a>  <span class="at">k =</span> <span class="dv">15</span></span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a>)</span></code></pre></div>
+<p>In general, the RP forest initialization is likely to be a better
+initial guess than random, but in terms of a speed/accuracy trade-off,
+using a large forest may not be the best choice. You may want to use
+<code>rpf_filter</code> to reduce the size of the forest before using it
+as an initial guess. In the <a href="https://github.com/lmcinnes/pynndescent">PyNNDescent</a> Python
+package that <code>rnndescent</code> is based on, only one tree is used
+for initializing query results.</p>
+</div>
+</div>
+</div>
+<div id="preparing-the-search-graph" class="section level2">
+<h2>Preparing the Search Graph</h2>
+<p>In all the examples so far, we have used the k-nearest neighbors
+graph as the <code>reference_graph</code> input to
+<code>graph_knn_query</code>. Is this actually a good idea? Probably
+not! There is no guarantee that all the items in the original dataset
+can actually be reached via the k-nearest neighbors graph. Some nodes
+just aren’t very popular and may not be in the neighbor list of
+<em>any</em> other item. That means you can never reach them via the
+k-nearest neighbors graph, no matter how thoroughly you search it.</p>
+<p>We can solve this problem by reversing all the edges in the graph and
+adding them to the graph. So if you can get to item <code>i</code> from
+item <code>j</code>, you can now get to item <code>j</code> from item
+<code>i</code>. This solves one problem but adds some more which is that
+just like some items are very unpopular, other items might be very
+popular and appear often in the neighbor list of other items. Having a
+large number of these edges in the graph can make the search very slow.
+We therefore need to prune some of these edges.</p>
+<p><code>prepare_search_graph</code> is a function that will take a
+k-nearest neighbor graph and add edges to it to make it more useful for
+a search. The procedure is based on the process described in <span class="citation">(Harwood and Drummond 2016)</span> and consists of:</p>
+<ol style="list-style-type: decimal">
+<li>Reversing all the edges in the graph.</li>
+<li>“Diversifying” the graph by “occlusion pruning”. This considers
+triplets of points, and removes long edges which are probably redundant.
+For an item <span class="math inline">\(i\)</span> with neighbors <span class="math inline">\(p\)</span> and <span class="math inline">\(q\)</span> if the distances <span class="math inline">\(d_{pq} \lt d_{ip}\)</span> i.e. the neighbors are
+closer to each other than they are to <span class="math inline">\(i\)</span>, then it is said that <span class="math inline">\(p\)</span> occludes <span class="math inline">\(q\)</span> and we don’t need both edges <span class="math inline">\(i \rightarrow p\)</span> and <span class="math inline">\(i \rightarrow q\)</span> – it’s likely that <span class="math inline">\(q\)</span> is in the neighbor list of <span class="math inline">\(p\)</span> or vice versa, so it’s unlikely that we
+are doing any harm by getting rid of <span class="math inline">\(i
+\rightarrow p\)</span>.</li>
+<li>After occlusion pruning, if any item still has an excessive number
+of edges, the longest edges are removed until the number of edges is
+below the threshold.</li>
+</ol>
+<p>To control all this pruning the following parameters are
+available:</p>
+<div id="diversification-probability" class="section level3">
+<h3>Diversification Probability</h3>
+<p><code>diversify_prob</code> is the probability of a neighbor being
+removed if it is found to be an “occlusion”. This should take a value
+between <code>0</code> (no diversification) and <code>1</code> (remove
+as many edges as possible). The default is <code>1.0</code>.</p>
+<p>The <a href="https://papers.nips.cc/paper_files/paper/2019/hash/09853c7fb1d3f8ee67a61b6bf4a7f8e6-Abstract.html">DiskAnn/Vamana</a>
+method’s pruning algorithm is almost identical but instead of a
+probability, uses a related parameter called <code>alpha</code>, which
+acts in the opposite direction: increasing <code>alpha</code> increases
+the density of the graph. Why am I telling you this? The <a href="https://github.com/cmuparlay/pbbsbench/blob/9553d354b5cf18153d4ea6370664c383316174eb/benchmarks/ANN/pyNNDescent/pynn_index.h#L235">pbbsbench
+implementation of PyNNDescent</a> uses <code>alpha</code> instead of
+<code>diversify_prob</code> and in the accompanying paper <span class="citation">(Dobson et al. 2023)</span> they mention that the use
+of <code>alpha</code> yields “modest improvements” – from context this
+seems to mean relative to using <code>diversify_prob = 1.0</code>. I
+can’t give an exact mapping between the two values unfortunately.</p>
+</div>
+<div id="degree-pruning" class="section level3">
+<h3>Degree Pruning</h3>
+<p><code>pruning_degree_multiplier</code> controls how many edges to
+remove after the occlusion pruning relative to the number of neighbors
+in the original nearest neighbor graph. The default is <code>1.5</code>
+which means to allow as many as 50% more edge than the original graph.
+So if the input graph was for <code>k = 15</code>, each item in the
+search graph will have at most <code>15 * 1.5 = 22</code> edges.</p>
+<p>Let’s see how this works on the <code>iris</code> neighbors:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">42</span>)</span>
+<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a>iris_search_graph <span class="ot">&lt;-</span> <span class="fu">prepare_search_graph</span>(</span>
+<span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a>  <span class="at">data =</span> iris_even,</span>
+<span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a>  <span class="at">graph =</span> rpf_nbrs,</span>
+<span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a>  <span class="at">diversify_prob =</span> <span class="fl">0.1</span>,</span>
+<span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a>  <span class="at">pruning_degree_multiplier =</span> <span class="fl">1.5</span></span>
+<span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a>)</span></code></pre></div>
+<p>Because the returned search graph can contain different number of
+edges per item, the neighbor graph format isn’t suitable. Instead you
+get back a sparse matrix, specifically a <code>dgCMatrix</code>. Here’s
+a histogram of how the edges are distributed:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a>search_graph_edges <span class="ot">&lt;-</span> <span class="fu">diff</span>(iris_search_graph<span class="sc">@</span>p)</span>
+<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a><span class="fu">hist</span>(search_graph_edges,</span>
+<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a>  <span class="at">main =</span> <span class="st">&quot;Distribution of search graph edges&quot;</span>, <span class="at">xlab =</span> <span class="st">&quot;# edges&quot;</span></span>
+<span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a>)</span></code></pre></div>
+<p><img src="data:image/png;base64,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" /><!-- --></p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a><span class="fu">range</span>(search_graph_edges)</span>
+<span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a><span class="co">#&gt; [1]  7 22</span></span></code></pre></div>
+<p>So most items have around about <code>k = 15</code> edges just like
+the nearest neighbor graph. But some have have the maximum number of
+edges and few have only 10 edges.</p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a>search_nbrs <span class="ot">&lt;-</span> <span class="fu">graph_knn_query</span>(</span>
+<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a>  <span class="at">query =</span> iris_odd,</span>
+<span id="cb14-3"><a href="#cb14-3" tabindex="-1"></a>  <span class="at">reference =</span> iris_even,</span>
+<span id="cb14-4"><a href="#cb14-4" tabindex="-1"></a>  <span class="at">reference_graph =</span> iris_search_graph,</span>
+<span id="cb14-5"><a href="#cb14-5" tabindex="-1"></a>  <span class="at">init =</span> rpf_index,</span>
+<span id="cb14-6"><a href="#cb14-6" tabindex="-1"></a>  <span class="at">k =</span> <span class="dv">15</span></span>
+<span id="cb14-7"><a href="#cb14-7" tabindex="-1"></a>)</span></code></pre></div>
+</div>
+</div>
+<div id="references" class="section level2 unnumbered">
+<h2 class="unnumbered">References</h2>
+<div id="refs" class="references csl-bib-body hanging-indent">
+<div id="ref-dobson2023scaling" class="csl-entry">
+Dobson, Magdalen, Zheqi Shen, Guy E Blelloch, Laxman Dhulipala, Yan Gu,
+Harsha Vardhan Simhadri, and Yihan Sun. 2023. <span>“Scaling Graph-Based
+ANNS Algorithms to Billion-Size Datasets: A Comparative
+Analysis.”</span> <em>arXiv Preprint arXiv:2305.04359</em>.
+</div>
+<div id="ref-harwood2016fanng" class="csl-entry">
+Harwood, Ben, and Tom Drummond. 2016. <span>“Fanng: Fast Approximate
+Nearest Neighbour Graphs.”</span> In <em>Proceedings of the IEEE
+Conference on Computer Vision and Pattern Recognition</em>, 5713–22.
+</div>
+<div id="ref-iwasaki2018optimization" class="csl-entry">
+Iwasaki, Masajiro, and Daisuke Miyazaki. 2018. <span>“Optimization of
+Indexing Based on k-Nearest Neighbor Graph for Proximity Search in
+High-Dimensional Data.”</span> <em>arXiv Preprint arXiv:1810.07355</em>.
+</div>
+<div id="ref-wang2021comprehensive" class="csl-entry">
+Wang, Mengzhao, Xiaoliang Xu, Qiang Yue, and Yuxiang Wang. 2021.
+<span>“A Comprehensive Survey and Experimental Comparison of Graph-Based
+Approximate Nearest Neighbor Search.”</span> <em>arXiv Preprint
+arXiv:2101.12631</em>.
+</div>
+</div>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

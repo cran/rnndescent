@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>rnndescent</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+
+<style type="text/css">
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+span.underline{text-decoration: underline;}
+div.column{display: inline-block; vertical-align: top; width: 50%;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+</style>
+
+
+
+<style type="text/css">
+code {
+white-space: pre;
+}
+.sourceCode {
+overflow: visible;
+}
+</style>
+<style type="text/css" data-origin="pandoc">
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+{ counter-reset: source-line 0; }
+pre.numberSource code > span
+{ position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+{ content: counter(source-line);
+position: relative; left: -1em; text-align: right; vertical-align: baseline;
+border: none; display: inline-block;
+-webkit-touch-callout: none; -webkit-user-select: none;
+-khtml-user-select: none; -moz-user-select: none;
+-ms-user-select: none; user-select: none;
+padding: 0 4px; width: 4em;
+color: #aaaaaa;
+}
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa; padding-left: 4px; }
+div.sourceCode
+{ }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } 
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.at { color: #7d9029; } 
+code span.bn { color: #40a070; } 
+code span.bu { color: #008000; } 
+code span.cf { color: #007020; font-weight: bold; } 
+code span.ch { color: #4070a0; } 
+code span.cn { color: #880000; } 
+code span.co { color: #60a0b0; font-style: italic; } 
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.do { color: #ba2121; font-style: italic; } 
+code span.dt { color: #902000; } 
+code span.dv { color: #40a070; } 
+code span.er { color: #ff0000; font-weight: bold; } 
+code span.ex { } 
+code span.fl { color: #40a070; } 
+code span.fu { color: #06287e; } 
+code span.im { color: #008000; font-weight: bold; } 
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } 
+code span.kw { color: #007020; font-weight: bold; } 
+code span.op { color: #666666; } 
+code span.ot { color: #007020; } 
+code span.pp { color: #bc7a00; } 
+code span.sc { color: #4070a0; } 
+code span.ss { color: #bb6688; } 
+code span.st { color: #4070a0; } 
+code span.va { color: #19177c; } 
+code span.vs { color: #4070a0; } 
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } 
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    var j = 0;
+    while (j < rules.length) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") {
+        j++;
+        continue;
+      }
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') {
+        j++;
+        continue;
+      }
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+<style type="text/css">
+
+div.csl-bib-body { }
+div.csl-entry {
+clear: both;
+}
+.hanging div.csl-entry {
+margin-left:2em;
+text-indent:-2em;
+}
+div.csl-left-margin {
+min-width:2em;
+float:left;
+}
+div.csl-right-inline {
+margin-left:2em;
+padding-left:1em;
+}
+div.csl-indent {
+margin-left: 2em;
+}
+</style>
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">rnndescent</h1>
+
+
+
+<p><code>rnndescent</code> is an R package for finding approximate
+nearest neighbors, based heavily on the Python package <a href="https://github.com/lmcinnes/pynndescent">PyNNDescent</a> by <a href="https://github.com/lmcinnes">Leland McInnes</a>, but is a fully
+independent reimplementation written in C++. It uses the following
+techniques:</p>
+<ol style="list-style-type: decimal">
+<li>Initialization by creating a forest of random project trees <span class="citation">(Dasgupta and Freund 2008)</span>.</li>
+<li>Optimization by using nearest neighbor descent <span class="citation">(Dong, Moses, and Li 2011)</span>.</li>
+<li>For building a search graph, graph diversification techniques from
+FANNG <span class="citation">(Harwood and Drummond 2016)</span>.</li>
+<li>For querying new data, the back-tracking search from NGT <span class="citation">(Iwasaki and Miyazaki 2018)</span> (without dynamic
+degree-adjustment).</li>
+</ol>
+<p>The easiest way to find k-nearest neighbors and query new data is to
+use the <code>rnnd_knn</code> function, which combine several of the
+available techniques into sensible defaults use the
+<code>rnnd_build</code> and <code>rnnd_query</code> functions. For
+greater flexibility, the underlying functions used by
+<code>rnnd_build</code> and <code>rnnd_query</code> can be used
+directly. The other vignettes in this package describe their use and go
+into more detail about the how the methods work.</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(rnndescent)</span></code></pre></div>
+<div id="find-the-k-nearest-neighbors" class="section level2">
+<h2>Find the k-nearest neighbors</h2>
+<p>If you just want the k-nearest neighbors of some data, use
+<code>rnnd_knn</code>:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>iris_knn <span class="ot">&lt;-</span> <span class="fu">rnnd_knn</span>(<span class="at">data =</span> iris, <span class="at">k =</span> <span class="dv">5</span>)</span></code></pre></div>
+<div id="the-neighbor-graph-format" class="section level3">
+<h3>The Neighbor Graph Format</h3>
+<p>The nearest neighbor graph format returned by all functions in this
+package is a list of two matrices:</p>
+<ul>
+<li><code>idx</code> – a matrix of indices of the nearest neighbors. As
+usual in R, these are 1-indexed.</li>
+<li><code>dist</code> – the equivalent distances.</li>
+</ul>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="fu">lapply</span>(iris_knn, <span class="cf">function</span>(x) {</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>  <span class="fu">head</span>(x, <span class="dv">3</span>)</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>})</span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="co">#&gt; $idx</span></span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="co">#&gt;      [,1] [,2] [,3] [,4] [,5]</span></span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="co">#&gt; [1,]    1   18    5   29   40</span></span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a><span class="co">#&gt; [2,]    2   13   46   35   10</span></span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a><span class="co">#&gt; [3,]    3   48    4    7   13</span></span>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a><span class="co">#&gt; $dist</span></span>
+<span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a><span class="co">#&gt;      [,1]      [,2]      [,3]      [,4]      [,5]</span></span>
+<span id="cb3-12"><a href="#cb3-12" tabindex="-1"></a><span class="co">#&gt; [1,]    0 0.1000000 0.1414212 0.1414212 0.1414213</span></span>
+<span id="cb3-13"><a href="#cb3-13" tabindex="-1"></a><span class="co">#&gt; [2,]    0 0.1414213 0.1414213 0.1414213 0.1732050</span></span>
+<span id="cb3-14"><a href="#cb3-14" tabindex="-1"></a><span class="co">#&gt; [3,]    0 0.1414213 0.2449490 0.2645751 0.2645753</span></span></code></pre></div>
+</div>
+</div>
+<div id="build-an-index" class="section level2">
+<h2>Build an Index</h2>
+<p><code>rnnd_knn</code> returns the k-nearest neighbors, but does not
+return any “index” that you can use to query new data. To do that, use
+<code>rnnd_build</code>. Normally you would query the index with
+different from that which you used to build the index, so let’s split
+<code>iris</code> up:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>iris_even <span class="ot">&lt;-</span> iris[<span class="fu">seq_len</span>(<span class="fu">nrow</span>(iris)) <span class="sc">%%</span> <span class="dv">2</span> <span class="sc">==</span> <span class="dv">0</span>, ]</span>
+<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>iris_odd <span class="ot">&lt;-</span> iris[<span class="fu">seq_len</span>(<span class="fu">nrow</span>(iris)) <span class="sc">%%</span> <span class="dv">2</span> <span class="sc">==</span> <span class="dv">1</span>, ]</span></code></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>iris_index <span class="ot">&lt;-</span> <span class="fu">rnnd_build</span>(iris_even, <span class="at">k =</span> <span class="dv">5</span>)</span></code></pre></div>
+<p>The index is also a list but with a lot more components (none of
+which are intended for manual examination), apart from the the neighbor
+graph which can be found under the <code>graph</code> component in the
+same format as the return value of <code>rnnd_knn</code>:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="fu">lapply</span>(iris_index<span class="sc">$</span>graph, <span class="cf">function</span>(x) {</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>  <span class="fu">head</span>(x, <span class="dv">3</span>)</span>
+<span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a>})</span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a><span class="co">#&gt; $idx</span></span>
+<span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a><span class="co">#&gt;      [,1] [,2] [,3] [,4] [,5]</span></span>
+<span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a><span class="co">#&gt; [1,]    1   23    5   13   18</span></span>
+<span id="cb6-7"><a href="#cb6-7" tabindex="-1"></a><span class="co">#&gt; [2,]    2   24   15   23    5</span></span>
+<span id="cb6-8"><a href="#cb6-8" tabindex="-1"></a><span class="co">#&gt; [3,]    3   10   11   17   14</span></span>
+<span id="cb6-9"><a href="#cb6-9" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb6-10"><a href="#cb6-10" tabindex="-1"></a><span class="co">#&gt; $dist</span></span>
+<span id="cb6-11"><a href="#cb6-11" tabindex="-1"></a><span class="co">#&gt;      [,1]      [,2]      [,3]      [,4]      [,5]</span></span>
+<span id="cb6-12"><a href="#cb6-12" tabindex="-1"></a><span class="co">#&gt; [1,]    0 0.1414213 0.1732050 0.2236068 0.3000000</span></span>
+<span id="cb6-13"><a href="#cb6-13" tabindex="-1"></a><span class="co">#&gt; [2,]    0 0.1414215 0.1732051 0.2645753 0.3162279</span></span>
+<span id="cb6-14"><a href="#cb6-14" tabindex="-1"></a><span class="co">#&gt; [3,]    0 0.3872986 0.4123107 0.4795830 0.5291505</span></span></code></pre></div>
+<p>Be aware that for large and high-dimensional data, the returned index
+can get <strong>very</strong> large, especially if you set
+<code>n_search_trees</code> to a large value.</p>
+</div>
+<div id="querying-data" class="section level2">
+<h2>Querying Data</h2>
+<p>To query new data, use <code>rnnd_query</code>:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>iris_odd_nn <span class="ot">&lt;-</span> <span class="fu">rnnd_query</span>(</span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>  <span class="at">index =</span> iris_index,</span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>  <span class="at">query =</span> iris_odd,</span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>  <span class="at">k =</span> <span class="dv">5</span></span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a>)</span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a><span class="fu">lapply</span>(iris_odd_nn, <span class="cf">function</span>(x) {</span>
+<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a>  <span class="fu">head</span>(x, <span class="dv">3</span>)</span>
+<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a>})</span>
+<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a><span class="co">#&gt; $idx</span></span>
+<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a><span class="co">#&gt;      [,1] [,2] [,3] [,4] [,5]</span></span>
+<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a><span class="co">#&gt; [1,]    9   20   14    4   25</span></span>
+<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a><span class="co">#&gt; [2,]   24    2   23   15    1</span></span>
+<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a><span class="co">#&gt; [3,]   19    9    4   20   14</span></span>
+<span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a><span class="co">#&gt; </span></span>
+<span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a><span class="co">#&gt; $dist</span></span>
+<span id="cb7-16"><a href="#cb7-16" tabindex="-1"></a><span class="co">#&gt;           [,1]      [,2]      [,3]      [,4]      [,5]</span></span>
+<span id="cb7-17"><a href="#cb7-17" tabindex="-1"></a><span class="co">#&gt; [1,] 0.1000000 0.1414213 0.1414213 0.1732050 0.2236068</span></span>
+<span id="cb7-18"><a href="#cb7-18" tabindex="-1"></a><span class="co">#&gt; [2,] 0.1414213 0.2449490 0.2645753 0.3000001 0.3000002</span></span>
+<span id="cb7-19"><a href="#cb7-19" tabindex="-1"></a><span class="co">#&gt; [3,] 0.1414213 0.1732050 0.2236066 0.2449488 0.2449488</span></span></code></pre></div>
+<p>You don’t need to keep the data that was used to build the index
+around, because internally, the index stores that (that’s one of the
+reasons the index can get large).</p>
+<p>Another use for <code>rnnd_query</code> is to improve the quality of
+a k-nearest neighbor graph. We are using for a <code>query</code> the
+same data we used to build <code>iris_index</code> and specifying via
+the <code>init</code> parameter the knn graph we already generated:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>iris_knn_improved <span class="ot">&lt;-</span> <span class="fu">rnnd_query</span>(</span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>  <span class="at">index =</span> iris_index,</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>  <span class="at">query =</span> iris_even,</span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>  <span class="at">init =</span> iris_index<span class="sc">$</span>graph,</span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a>  <span class="at">k =</span> <span class="dv">5</span></span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a>) </span></code></pre></div>
+<p>If the k-nearest neighbor graph in <code>index$graph</code> isn’t
+sufficiently high quality, then result of running
+<code>rnnd_query</code> on the same data should be an improvement.
+Exactly how much better is hard to say, but you can always compare the
+sum of the distances:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a><span class="fu">c</span>(</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>  <span class="fu">sum</span>(iris_index<span class="sc">$</span>graph<span class="sc">$</span>dist),</span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a>  <span class="fu">sum</span>(iris_knn_improved<span class="sc">$</span>dist)</span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a>)</span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a><span class="co">#&gt; [1] 124.3317 124.3317</span></span></code></pre></div>
+<p>In this case, the initial knn has not been improved, which is hardly
+surprising due to the size of the dataset. Another function that might
+be of use is the <code>neighbor_overlap</code> function to see how many
+neighbors are shared between the two graphs:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a><span class="fu">neighbor_overlap</span>(iris_index<span class="sc">$</span>graph, iris_knn_improved)</span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a><span class="co">#&gt; [1] 1</span></span></code></pre></div>
+<p>As there was no change to the graph, the overlap is 100%. More
+details on this can be found in the <a href="hubness.html">hubness</a>
+vignette and a more ambitious dataset is covered in the <a href="https://jlmelville.github.io/rnndescent/articles/fmnist-example.html">FMNIST
+article</a>.</p>
+</div>
+<div id="parallelism" class="section level2">
+<h2>Parallelism</h2>
+<p><code>rnndescent</code> is multi-threaded, but by default is
+single-threaded. Set <code>n_threads</code> to set the number of threads
+you want to use:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a>iris_index <span class="ot">&lt;-</span> <span class="fu">rnnd_build</span>(<span class="at">data =</span> iris_even, <span class="at">k =</span> <span class="dv">5</span>, <span class="at">n_threads =</span> <span class="dv">2</span>)</span></code></pre></div>
+</div>
+<div id="available-metrics" class="section level2">
+<h2>Available Metrics</h2>
+<p>Several different distances are available in <code>rnndescent</code>
+beyond the typically-supported Euclidean and Cosine-based distances in
+other nearest neighbor packages. See the <a href="metrics.html">metrics</a> vignette for more details.</p>
+</div>
+<div id="supported-data-types" class="section level2">
+<h2>Supported Data Types</h2>
+<ul>
+<li>Dense matrices and data frames.</li>
+<li>Sparse matrices, in the <code>dgCMatrix</code>. All the same
+distances are supported as for dense matrices.</li>
+<li>Additionally, for dense binary data, if you supply it as a
+<code>logical</code> matrix, then for certain distances intended for
+binary data, specialized functions will be used to speed up the
+computation.</li>
+</ul>
+</div>
+<div id="parameters" class="section level2">
+<h2>Parameters</h2>
+<p>There are several options that <code>rnnd_build</code> and
+<code>rnnd_query</code> expose that can be modified to change the
+behavior of the different stages of the algorithm. See the documentation
+for those functions (e.g. <code>?rnnd_build</code>) or the <a href="random-partition-forests.html">Random Partition Forests</a>, <a href="nearest-neighbor-descent.html">Nearest Neighbor Descent</a> and <a href="querying-data.html">Querying Data</a> vignettes for more
+details.</p>
+</div>
+<div id="references" class="section level2 unnumbered">
+<h2 class="unnumbered">References</h2>
+<div id="refs" class="references csl-bib-body hanging-indent">
+<div id="ref-dasgupta2008random" class="csl-entry">
+Dasgupta, Sanjoy, and Yoav Freund. 2008. <span>“Random Projection Trees
+and Low Dimensional Manifolds.”</span> In <em>Proceedings of the
+Fortieth Annual ACM Symposium on Theory of Computing</em>, 537–46.
+</div>
+<div id="ref-dong2011efficient" class="csl-entry">
+Dong, Wei, Charikar Moses, and Kai Li. 2011. <span>“Efficient k-Nearest
+Neighbor Graph Construction for Generic Similarity Measures.”</span> In
+<em>Proceedings of the 20th International Conference on World Wide
+Web</em>, 577–86.
+</div>
+<div id="ref-harwood2016fanng" class="csl-entry">
+Harwood, Ben, and Tom Drummond. 2016. <span>“Fanng: Fast Approximate
+Nearest Neighbour Graphs.”</span> In <em>Proceedings of the IEEE
+Conference on Computer Vision and Pattern Recognition</em>, 5713–22.
+</div>
+<div id="ref-iwasaki2018optimization" class="csl-entry">
+Iwasaki, Masajiro, and Daisuke Miyazaki. 2018. <span>“Optimization of
+Indexing Based on k-Nearest Neighbor Graph for Proximity Search in
+High-Dimensional Data.”</span> <em>arXiv Preprint arXiv:1810.07355</em>.
+</div>
+</div>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>
