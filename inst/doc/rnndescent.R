@@ -43,7 +43,7 @@ iris_knn_improved <- rnnd_query(
   query = iris_even,
   init = iris_index$graph,
   k = 5
-) 
+)
 
 ## ----sum distances------------------------------------------------------------
 c(

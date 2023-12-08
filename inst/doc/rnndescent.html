@@ -458,7 +458,7 @@ can get <strong>very</strong> large, especially if you set
 <span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a>})</span>
 <span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a><span class="co">#&gt; $idx</span></span>
 <span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a><span class="co">#&gt;      [,1] [,2] [,3] [,4] [,5]</span></span>
-<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a><span class="co">#&gt; [1,]    9   20   14    4   25</span></span>
+<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a><span class="co">#&gt; [1,]    9   14   20    4   25</span></span>
 <span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a><span class="co">#&gt; [2,]   24    2   23   15    1</span></span>
 <span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a><span class="co">#&gt; [3,]   19    9    4   20   14</span></span>
 <span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a><span class="co">#&gt; </span></span>
@@ -479,7 +479,7 @@ the <code>init</code> parameter the knn graph we already generated:</p>
 <span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>  <span class="at">query =</span> iris_even,</span>
 <span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>  <span class="at">init =</span> iris_index<span class="sc">$</span>graph,</span>
 <span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a>  <span class="at">k =</span> <span class="dv">5</span></span>
-<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a>) </span></code></pre></div>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a>)</span></code></pre></div>
 <p>If the k-nearest neighbor graph in <code>index$graph</code> isn’t
 sufficiently high quality, then result of running
 <code>rnnd_query</code> on the same data should be an improvement.

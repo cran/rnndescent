@@ -521,7 +521,7 @@ we build the forest (and get the 15-nearest neighbors) for the first 50
 <code>iris</code> items and then query the remaining 100:</p>
 <div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>iris_knn_with_forest <span class="ot">&lt;-</span></span>
 <span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a>  <span class="fu">rpf_knn</span>(iris[<span class="dv">1</span><span class="sc">:</span><span class="dv">50</span>, ], <span class="at">k =</span> <span class="dv">15</span>, <span class="at">ret_forest =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>iris_query <span class="ot">&lt;-</span></span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a>iris_query_virginica <span class="ot">&lt;-</span></span>
 <span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a>  <span class="fu">rpf_knn_query</span>(</span>
 <span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a>    <span class="at">query =</span> iris[<span class="dv">51</span><span class="sc">:</span><span class="dv">150</span>, ],</span>
 <span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a>    <span class="at">reference =</span> iris[<span class="dv">1</span><span class="sc">:</span><span class="dv">50</span>, ],</span>
@@ -613,9 +613,9 @@ that case, keeping the entire forest for querying new data is probably
 unnecessary: we can keep only the “best” trees. PyNNDescent only keeps
 one tree for this purpose. For determining what tree is “best”, we mean
 the tree that reproduces the k-nearest neighbor graph most effectively.
-You can do this by comparing a k-nearest neighbor graph with that
-produced by a single tree. The <code>rpf_filter</code> function does
-this for you:</p>
+You can do this by comparing an existing k-nearest neighbor graph with
+that produced by a single tree. The <code>rpf_filter</code> function
+does this for you:</p>
 <div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>iris_filtered <span class="ot">&lt;-</span></span>
 <span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>  <span class="fu">rpf_filter</span>(</span>
 <span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a>    <span class="at">nn =</span> iris_query,</span>

@@ -25,7 +25,7 @@ iris_knn <- rpf_knn(iris, k = 15)
 ## ----forest knn with forest---------------------------------------------------
 iris_knn_with_forest <-
   rpf_knn(iris[1:50, ], k = 15, ret_forest = TRUE)
-iris_query <-
+iris_query_virginica <-
   rpf_knn_query(
     query = iris[51:150, ],
     reference = iris[1:50, ],
