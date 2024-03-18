@@ -185,6 +185,15 @@ summary(g2d_nndkoi1)
 sum(g2d_nndkoi1 == 1)
 neighbor_overlap(g2d_nnbf, g2d_nnd_iter1, k = 15)
 
+## ----NND 1000D weight by degree-----------------------------------------------
+g1000d_nnd_w <-
+  nnd_knn(g1000d,
+    k = 15,
+    metric = "euclidean",
+    weight_by_degree = TRUE
+  )
+neighbor_overlap(g1000d_nnbf, g1000d_nnd_w)
+
 ## ----NND 1000D truncated 30---------------------------------------------------
 g1000d_nnd_k30 <- nnd_knn(g1000d, k = 30, metric = "euclidean")
 neighbor_overlap(g1000d_nnbf, g1000d_nnd_k30, k = 15)

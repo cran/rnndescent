@@ -52,17 +52,18 @@ public:
                const NNHeap<Out, Idx> &new_nbrs, decltype(new_nbrs) &old_nbrs,
                NNDProgressBase &progress) -> unsigned long {
     const auto n_points = new_nbrs.n_points;
-    const auto max_candidates = new_nbrs.n_nbrs;
+    const auto max_new_candidates = new_nbrs.n_nbrs;
+    const auto max_old_candidates = old_nbrs.n_nbrs;
     progress.set_n_batches(n_points);
     unsigned long num_updates = 0UL;
     for (Idx i = 0; i < n_points; i++) {
-      for (Idx j = 0; j < max_candidates; j++) {
-        // (new, new) pairs from j -> max_candidates
+      for (Idx j = 0; j < max_new_candidates; j++) {
+        // (new, new) pairs from j -> max_new_candidates
         auto new_j = new_nbrs.index(i, j);
         if (new_j == npos) {
           continue;
         }
-        for (auto k = j; k < max_candidates; k++) {
+        for (auto k = j; k < max_new_candidates; k++) {
           auto new_k = new_nbrs.index(i, k);
           if (new_k == npos) {
             continue;
@@ -70,8 +71,8 @@ public:
           num_updates += this->update(current_graph, new_j, new_k);
         }
 
-        // (new, old) pairs from 0 -> max_candidates
-        for (Idx k = 0; k < max_candidates; k++) {
+        // (new, old) pairs from 0 -> max_old_candidates
+        for (Idx k = 0; k < max_old_candidates; k++) {
           auto old_k = old_nbrs.index(i, k);
           if (old_k == npos) {
             continue;
@@ -161,10 +162,13 @@ public:
 template <typename Out, typename Idx>
 void build_candidates(const NNDHeap<Out, Idx> &current_graph,
                       NNHeap<Out, Idx> &new_nbrs, decltype(new_nbrs) &old_nbrs,
-                      RandomGenerator &rand) {
+                      bool weight_by_degree, RandomGenerator &rand) {
   constexpr auto npos = static_cast<Idx>(-1);
   const std::size_t n_points = current_graph.n_points;
   const std::size_t n_nbrs = current_graph.n_nbrs;
+
+  auto k_occurrences = weight_by_degree ? count_reverse_neighbors(current_graph)
+                                        : std::vector<std::size_t>();
 
   for (std::size_t i = 0, idx_offset = 0; i < n_points;
        i++, idx_offset += n_nbrs) {
@@ -175,7 +179,14 @@ void build_candidates(const NNDHeap<Out, Idx> &current_graph,
       }
       auto &nbrs = current_graph.flags[idx_ij] == 1 ? new_nbrs : old_nbrs;
       auto rand_weight = rand.unif(); // pairs will be processed in random order
-      nbrs.checked_push_pair(i, rand_weight, nbr);
+      if (weight_by_degree) {
+        nbrs.checked_push(i, rand_weight * k_occurrences[nbr], nbr);
+        if (i != nbr) {
+          nbrs.checked_push(nbr, rand_weight * k_occurrences[i], i);
+        }
+      } else {
+        nbrs.checked_push_pair(i, rand_weight, nbr);
+      }
     }
   }
 }
@@ -193,13 +204,14 @@ template <typename Out, typename Idx>
 void nnd_build(NNDHeap<Out, Idx> &current_graph,
                SerialLocalJoin<Out, Idx> &local_join,
                std::size_t max_candidates, uint32_t n_iters, double delta,
-               RandomGenerator &rand, NNDProgressBase &progress) {
+               bool weight_by_degree, RandomGenerator &rand,
+               NNDProgressBase &progress) {
   const std::size_t n_points = current_graph.n_points;
   for (auto iter = 0U; iter < n_iters; iter++) {
     NNHeap<Out, Idx> new_nbrs(n_points, max_candidates);
     decltype(new_nbrs) old_nbrs(n_points, max_candidates);
 
-    build_candidates(current_graph, new_nbrs, old_nbrs, rand);
+    build_candidates(current_graph, new_nbrs, old_nbrs, weight_by_degree, rand);
 
     flag_retained_new_candidates(current_graph, new_nbrs);
 

@@ -8,8 +8,10 @@ prepare_search_graph(
   data,
   graph,
   metric = "euclidean",
+  use_alt_metric = TRUE,
   diversify_prob = 1,
   pruning_degree_multiplier = 1.5,
+  prune_reverse = FALSE,
   n_threads = 0,
   verbose = FALSE,
   obs = "R"
@@ -86,6 +88,13 @@ a dense numeric vector of 0s and 1s):
 \item \code{"yule"}
 }}
 
+\item{use_alt_metric}{If \code{TRUE}, use faster metrics that maintain the
+ordering of distances internally (e.g. squared Euclidean distances if using
+\code{metric = "euclidean"}), then apply a correction at the end. Probably
+the only reason to set this to \code{FALSE} is if you suspect that some
+sort of numeric issue is occurring with your data in the alternative code
+path.}
+
 \item{diversify_prob}{the degree of diversification of the search graph
 by removing unnecessary edges through occlusion pruning. This should take a
 value between \code{0} (no diversification) and \code{1} (remove as many edges as
@@ -112,6 +121,13 @@ setting this to \code{1.5} will keep all the forward neighbors and then
 half as many of the reverse neighbors, although exactly which neighbors are
 retained is also dependent on any occlusion pruning that occurs. Set this
 to \code{NULL} to skip this step.}
+
+\item{prune_reverse}{If \code{TRUE}, prune the reverse neighbors of each item
+before the reverse graph diversification step using
+\code{pruning_degree_multiplier}. Because the number of reverse neighbors can be
+much larger than the number of forward neighbors, this can help to avoid
+excessive computation during the diversification step, with little overall
+effect on the final search graph. Default is \code{FALSE}.}
 
 \item{n_threads}{Number of threads to use.}
 

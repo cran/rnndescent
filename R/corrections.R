@@ -43,52 +43,99 @@ apply_alt_metric_uncorrection <- function(metric, dist, is_sparse = FALSE) {
 }
 
 apply_dense_alt_metric_uncorrection <- function(metric, dist) {
-  switch(metric,
-    cosine = apply(dist, c(1, 2), uncorrect_alternative_cosine),
-    dot = apply(dist, c(1, 2), uncorrect_alternative_cosine),
-    euclidean = dist * dist,
-    hellinger = apply(dist, c(1, 2), uncorrect_alternative_hellinger),
-    jaccard = apply(dist, c(1, 2), uncorrect_alternative_jaccard),
-    trueangular = apply(dist, c(1, 2), uncorrect_true_angular),
-    dist
-  )
+  if (is.matrix(dist)) {
+    switch(metric,
+      cosine = apply(dist, c(1, 2), uncorrect_alternative_cosine),
+      dot = apply(dist, c(1, 2), uncorrect_alternative_cosine),
+      euclidean = dist * dist,
+      hellinger = apply(dist, c(1, 2), uncorrect_alternative_hellinger),
+      jaccard = apply(dist, c(1, 2), uncorrect_alternative_jaccard),
+      trueangular = apply(dist, c(1, 2), uncorrect_true_angular),
+      dist
+    )
+  } else {
+    switch(metric,
+      cosine = sapply(dist, uncorrect_alternative_cosine),
+      dot = sapply(dist, uncorrect_alternative_cosine),
+      euclidean = dist * dist,
+      hellinger = sapply(dist, uncorrect_alternative_hellinger),
+      jaccard = sapply(dist, uncorrect_alternative_jaccard),
+      trueangular = sapply(dist, uncorrect_true_angular),
+      dist
+    )
+  }
 }
 
 apply_sparse_alt_metric_uncorrection <- function(metric, dist) {
-  # browser()
-  switch(metric,
-    cosine = apply(dist, c(1, 2), uncorrect_alternative_cosine),
-    euclidean = dist * dist,
-    dot = apply(dist, c(1, 2), uncorrect_alternative_cosine),
-    hellinger = apply(dist, c(1, 2), uncorrect_alternative_hellinger),
-    jaccard = apply(dist, c(1, 2), uncorrect_alternative_jaccard),
-    trueangular = apply(dist, c(1, 2), uncorrect_true_angular),
-    dist
-  )
+  if (is.matrix(dist)) {
+    switch(metric,
+      cosine = apply(dist, c(1, 2), uncorrect_alternative_cosine),
+      euclidean = dist * dist,
+      dot = apply(dist, c(1, 2), uncorrect_alternative_cosine),
+      hellinger = apply(dist, c(1, 2), uncorrect_alternative_hellinger),
+      jaccard = apply(dist, c(1, 2), uncorrect_alternative_jaccard),
+      trueangular = apply(dist, c(1, 2), uncorrect_true_angular),
+      dist
+    )
+  } else {
+    switch(metric,
+      cosine = sapply(dist, uncorrect_alternative_cosine),
+      euclidean = dist * dist,
+      dot = sapply(dist, uncorrect_alternative_cosine),
+      hellinger = sapply(dist, uncorrect_alternative_hellinger),
+      jaccard = sapply(dist, uncorrect_alternative_jaccard),
+      trueangular = sapply(dist, uncorrect_true_angular),
+      dist
+    )
+  }
 }
 
 apply_dense_alt_metric_correction <- function(metric, dist) {
-  switch(metric,
-    cosine = apply(dist, c(1, 2), correct_alternative_cosine),
-    dot = apply(dist, c(1, 2), correct_alternative_dot),
-    euclidean = sqrt(dist),
-    hellinger = apply(dist, c(1, 2), correct_alternative_hellinger),
-    jaccard = apply(dist, c(1, 2), correct_alternative_jaccard),
-    trueangular = apply(dist, c(1, 2), true_angular_from_alt_cosine),
-    dist
-  )
+  if (is.matrix(dist)) {
+    switch(metric,
+      cosine = apply(dist, c(1, 2), correct_alternative_cosine),
+      dot = apply(dist, c(1, 2), correct_alternative_dot),
+      euclidean = sqrt(dist),
+      hellinger = apply(dist, c(1, 2), correct_alternative_hellinger),
+      jaccard = apply(dist, c(1, 2), correct_alternative_jaccard),
+      trueangular = apply(dist, c(1, 2), true_angular_from_alt_cosine),
+      dist
+    )
+  } else {
+    switch(metric,
+      cosine = sapply(dist, correct_alternative_cosine),
+      dot = sapply(dist, correct_alternative_dot),
+      euclidean = sqrt(dist),
+      hellinger = sapply(dist, correct_alternative_hellinger),
+      jaccard = sapply(dist, correct_alternative_jaccard),
+      trueangular = sapply(dist, true_angular_from_alt_cosine),
+      dist
+    )
+  }
 }
 
 apply_sparse_alt_metric_correction <- function(metric, dist) {
-  switch(metric,
-    cosine = apply(dist, c(1, 2), correct_alternative_cosine),
-    dot = apply(dist, c(1, 2), correct_alternative_dot),
-    euclidean = sqrt(dist),
-    hellinger = apply(dist, c(1, 2), correct_alternative_hellinger),
-    jaccard = apply(dist, c(1, 2), correct_alternative_jaccard),
-    trueangular = apply(dist, c(1, 2), true_angular_from_alt_cosine),
-    dist
-  )
+  if (is.matrix(dist)) {
+    switch(metric,
+      cosine = apply(dist, c(1, 2), correct_alternative_cosine),
+      euclidean = sqrt(dist),
+      dot = apply(dist, c(1, 2), correct_alternative_dot),
+      hellinger = apply(dist, c(1, 2), correct_alternative_hellinger),
+      jaccard = apply(dist, c(1, 2), correct_alternative_jaccard),
+      trueangular = apply(dist, c(1, 2), true_angular_from_alt_cosine),
+      dist
+    )
+  } else {
+    switch(metric,
+      cosine = sapply(dist, correct_alternative_cosine),
+      euclidean = sqrt(dist),
+      dot = sapply(dist, correct_alternative_dot),
+      hellinger = sapply(dist, correct_alternative_hellinger),
+      jaccard = sapply(dist, correct_alternative_jaccard),
+      trueangular = sapply(dist, true_angular_from_alt_cosine),
+      dist
+    )
+  }
 }
 
 apply_alt_metric_correction <- function(metric, dist, is_sparse = FALSE) {

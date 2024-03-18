@@ -152,6 +152,14 @@
 #'   `FALSE`, you should see a noticeable speed improvement, especially when
 #'   using a smaller number of threads, so this is worth trying if you have the
 #'   memory to spare.
+#' @param weight_by_degree If `TRUE`, then candidates for the local join are
+#'   weighted according to their in-degree, so that if there are more than
+#'   `max_candidates` in a candidate list, candidates with a smaller degree are
+#'   favored for retention. This prevents items with large numbers of edges
+#'   crowding out other items and for high-dimensional data is likely to provide
+#'   a small improvement in accuracy. Because this incurs a small extra cost of
+#'   counting the degree of each node, and because it tends to delay early
+#'   convergence, by default this is `FALSE`.
 #' @param n_search_trees, the number of trees to keep in the search forest as
 #'   part of index preparation. The default is `1`.
 #' @param diversify_prob the degree of diversification of the search graph
@@ -176,6 +184,12 @@
 #'   half as many of the reverse neighbors, although exactly which neighbors are
 #'   retained is also dependent on any occlusion pruning that occurs. Set this
 #'   to `NULL` to skip this step.
+#' @param prune_reverse If `TRUE`, prune the reverse neighbors of each item
+#'   before the reverse graph diversification step using
+#'   `pruning_degree_multiplier`. Because the number of reverse neighbors can be
+#'   much larger than the number of forward neighbors, this can help to avoid
+#'   excessive computation during the diversification step, with little overall
+#'   effect on the final search graph. Default is `FALSE`.
 #' @param n_threads Number of threads to use.
 #' @param verbose If `TRUE`, log information to the console.
 #' @param progress Determines the type of progress information logged during the
@@ -236,9 +250,11 @@ rnnd_build <- function(data,
                        delta = 0.001,
                        max_candidates = NULL,
                        low_memory = TRUE,
+                       weight_by_degree = FALSE,
                        n_search_trees = 1,
                        pruning_degree_multiplier = 1.5,
                        diversify_prob = 1.0,
+                       prune_reverse = FALSE,
                        n_threads = 0,
                        verbose = FALSE,
                        progress = "bar",
@@ -265,6 +281,7 @@ rnnd_build <- function(data,
     delta = delta,
     max_candidates = max_candidates,
     low_memory = low_memory,
+    weight_by_degree = weight_by_degree,
     n_threads = n_threads,
     verbose = verbose,
     progress = progress,
@@ -280,6 +297,7 @@ rnnd_build <- function(data,
     pruning_degree_multiplier = pruning_degree_multiplier,
     diversify_prob = diversify_prob,
     n_search_trees = n_search_trees,
+    prune_reverse = prune_reverse,
     is_prepared = FALSE
   )
 
@@ -302,8 +320,10 @@ rnnd_build <- function(data,
     data = index$data,
     graph = index$graph,
     metric = index$original_metric,
+    use_alt_metric = index$use_alt_metric,
     diversify_prob = index$prep$diversify_prob,
     pruning_degree_multiplier = index$prep$pruning_degree_multiplier,
+    prune_reverse = index$prep$prune_reverse,
     n_threads = n_threads,
     verbose = verbose,
     obs = "C"
@@ -574,6 +594,14 @@ rnnd_query <-
 #'   `FALSE`, you should see a noticeable speed improvement, especially when
 #'   using a smaller number of threads, so this is worth trying if you have the
 #'   memory to spare.
+#' @param weight_by_degree If `TRUE`, then candidates for the local join are
+#'   weighted according to their in-degree, so that if there are more than
+#'   `max_candidates` in a candidate list, candidates with a smaller degree are
+#'   favored for retention. This prevents items with large numbers of edges
+#'   crowding out other items and for high-dimensional data is likely to provide
+#'   a small improvement in accuracy. Because this incurs a small extra cost of
+#'   counting the degree of each node, and because it tends to delay early
+#'   convergence, by default this is `FALSE`.
 #' @param n_threads Number of threads to use.
 #' @param verbose If `TRUE`, log information to the console.
 #' @param progress Determines the type of progress information logged during the
@@ -623,6 +651,7 @@ rnnd_knn <- function(data,
                      n_iters = NULL,
                      delta = 0.001,
                      max_candidates = NULL,
+                     weight_by_degree = FALSE,
                      low_memory = TRUE,
                      n_threads = 0,
                      verbose = FALSE,
@@ -650,6 +679,7 @@ rnnd_knn <- function(data,
     delta = delta,
     max_candidates = max_candidates,
     low_memory = low_memory,
+    weight_by_degree = weight_by_degree,
     n_threads = n_threads,
     verbose = verbose,
     progress = progress,
@@ -1081,6 +1111,14 @@ random_knn <-
 #'   `FALSE`, you should see a noticeable speed improvement, especially
 #'   when using a smaller number of threads, so this is worth trying if you have
 #'   the memory to spare.
+#' @param weight_by_degree If `TRUE`, then candidates for the local join are
+#'   weighted according to their in-degree, so that if there are more than
+#'   `max_candidates` in a candidate list, candidates with a smaller degree are
+#'   favored for retention. This prevents items with large numbers of edges
+#'   crowding out other items and for high-dimensional data is likely to provide
+#'   a small improvement in accuracy. Because this incurs a small extra cost of
+#'   counting the degree of each node, and because it tends to delay early
+#'   convergence, by default this is `FALSE`.
 #' @param use_alt_metric If `TRUE`, use faster metrics that maintain the
 #'   ordering of distances internally (e.g. squared Euclidean distances if using
 #'   `metric = "euclidean"`), then apply a correction at the end. Probably
@@ -1185,6 +1223,7 @@ nnd_knn <- function(data,
                     max_candidates = NULL,
                     delta = 0.001,
                     low_memory = TRUE,
+                    weight_by_degree = FALSE,
                     use_alt_metric = TRUE,
                     n_threads = 0,
                     verbose = FALSE,
@@ -1317,6 +1356,7 @@ nnd_knn <- function(data,
     max_candidates = max_candidates,
     delta = delta,
     low_memory = low_memory,
+    weight_by_degree = weight_by_degree,
     n_threads = n_threads,
     verbose = verbose,
     progress_type = progress
@@ -2207,6 +2247,12 @@ graph_knn_query <- function(query,
 #'   - `"sokalmichener"`
 #'   - `"sokalsneath"`
 #'   - `"yule"`
+#' @param use_alt_metric If `TRUE`, use faster metrics that maintain the
+#'   ordering of distances internally (e.g. squared Euclidean distances if using
+#'   `metric = "euclidean"`), then apply a correction at the end. Probably
+#'   the only reason to set this to `FALSE` is if you suspect that some
+#'   sort of numeric issue is occurring with your data in the alternative code
+#'   path.
 #' @param diversify_prob the degree of diversification of the search graph
 #'   by removing unnecessary edges through occlusion pruning. This should take a
 #'   value between `0` (no diversification) and `1` (remove as many edges as
@@ -2232,6 +2278,12 @@ graph_knn_query <- function(query,
 #'   half as many of the reverse neighbors, although exactly which neighbors are
 #'   retained is also dependent on any occlusion pruning that occurs. Set this
 #'   to `NULL` to skip this step.
+#' @param prune_reverse If `TRUE`, prune the reverse neighbors of each item
+#'   before the reverse graph diversification step using
+#'   `pruning_degree_multiplier`. Because the number of reverse neighbors can be
+#'   much larger than the number of forward neighbors, this can help to avoid
+#'   excessive computation during the diversification step, with little overall
+#'   effect on the final search graph. Default is `FALSE`.
 #' @param n_threads Number of threads to use.
 #' @param verbose If `TRUE`, log information to the console.
 #' @param obs set to `"C"` to indicate that the input `data` orientation stores
@@ -2276,8 +2328,10 @@ graph_knn_query <- function(query,
 prepare_search_graph <- function(data,
                                  graph,
                                  metric = "euclidean",
+                                 use_alt_metric = TRUE,
                                  diversify_prob = 1.0,
                                  pruning_degree_multiplier = 1.5,
+                                 prune_reverse = FALSE,
                                  n_threads = 0,
                                  verbose = FALSE,
                                  obs = "R") {
@@ -2293,30 +2347,35 @@ prepare_search_graph <- function(data,
     )
   }
 
+  actual_metric <-
+    get_actual_metric(use_alt_metric, metric, data, verbose)
+
   if (is_sparse(graph)) {
     sp <- Matrix::t(graph)
     n_nbrs <- mean(diff(sp@p))
-    max_degree <- max(round(n_nbrs * pruning_degree_multiplier), 1)
   } else {
     n_nbrs <- check_graph(graph)$k
-    max_degree <- max(round(n_nbrs * pruning_degree_multiplier), 1)
     tsmessage("Converting graph to sparse format")
     sp <- graph_to_csparse(graph)
   }
 
   sp <- preserve_zeros(sp)
 
+  if (use_alt_metric) {
+    sp@x <-
+      apply_alt_metric_uncorrection(metric, sp@x, is_sparse(data))
+  }
+
   data <- x2m(data)
   if (obs == "R") {
     data <- Matrix::t(data)
   }
-
   if (!is.null(diversify_prob) && diversify_prob > 0) {
     tsmessage("Diversifying forward graph")
     fdiv <- diversify(
       data,
       sp,
-      metric = metric,
+      metric = actual_metric,
       prune_probability = diversify_prob,
       verbose = verbose,
       n_threads = n_threads
@@ -2333,11 +2392,24 @@ prepare_search_graph <- function(data,
   }
   rsp <- reverse_knn_sp(fdiv)
   if (!is.null(diversify_prob) && diversify_prob > 0) {
+    if (prune_reverse && !is.null(pruning_degree_multiplier) &&
+        !is.infinite(pruning_degree_multiplier)) {
+      max_degree <- max(round(n_nbrs * pruning_degree_multiplier), 1)
+      tsmessage("Degree pruning reverse graph to max degree: ", max_degree)
+      rsp <-
+        degree_prune(
+          rsp,
+          max_degree = max_degree,
+          verbose = verbose,
+          n_threads = n_threads
+        )
+    }
+
     tsmessage("Diversifying reverse graph")
     rdiv <- diversify(
       data,
       rsp,
-      metric = metric,
+      metric = actual_metric,
       prune_probability = diversify_prob,
       verbose = verbose,
       n_threads = n_threads
@@ -2357,7 +2429,7 @@ prepare_search_graph <- function(data,
 
   if (!is.null(pruning_degree_multiplier) &&
     !is.infinite(pruning_degree_multiplier)) {
-    max_degree <- round(n_nbrs * pruning_degree_multiplier)
+    max_degree <- max(round(n_nbrs * pruning_degree_multiplier), 1)
     tsmessage("Degree pruning merged graph to max degree: ", max_degree)
     res <-
       degree_prune(
@@ -2376,6 +2448,12 @@ prepare_search_graph <- function(data,
       "% sparse)"
     )
   }
+
+  if (use_alt_metric) {
+    res@x <-
+      apply_alt_metric_correction(metric, res@x, is_sparse(data))
+  }
+
   tsmessage("Finished preparing search graph")
   # return this pre-transposed so we don't have to do it in graph_knn_query
   Matrix::t(res)
@@ -2404,7 +2482,7 @@ diversify <- function(data,
   stopifnot(methods::is(graph, "sparseMatrix"))
   gl <- csparse_to_list(graph)
 
-  tsmessage("Occlusion pruning with probability: ")
+  tsmessage("Occlusion pruning with probability: ", prune_probability)
   args <- list(
     graph_list = gl,
     metric = metric,
