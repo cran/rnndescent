@@ -1,6 +1,6 @@
-d3eb94b41dd82de32d6ac54d528b2bf6 *DESCRIPTION
+19f320f03635b51343ce153fb2520c6b *DESCRIPTION
 768d586ccb1297f394cfcecf4cd80904 *NAMESPACE
-cb1f17a14682f2c1e9092bf099f45487 *NEWS.md
+b2f2e07d04de1b9569e0c3e8d07b7682 *NEWS.md
 b3211b5ff1b8d0134c69d69ac33913a4 *R/RcppExports.R
 3a726399ceb938ddeef771edc1298298 *R/corrections.R
 c59ea1241ef7bb6b0305e23edb20cda0 *R/hubness.R
@@ -35,7 +35,7 @@ d5d9be27bae10d7dfcd396cb9cbc7246 *inst/doc/querying-data.html
 8bb306299fdd7218e1c3c09baa336c25 *inst/doc/rnndescent.html
 131693b713fecabfbe6cbdc309e1d5f7 *inst/include/dqsample.h
 1a4957eeffd4070241cf8c82ca2a413a *inst/include/pforr.h
-dbad10bd621b09f662a4a55248f66e6b *inst/include/rnndescent/random.h
+d5dc95b850f107d9577f9fe15377fa15 *inst/include/rnndescent/random.h
 582c9da8fd3045b4cc31b7047eec7777 *inst/include/tdoann/bitvec.h
 b10f2eb35be2d1cd569ed42e7c6d4f7a *inst/include/tdoann/bruteforce.h
 ccf0b0549629a303ee354284cb4669d2 *inst/include/tdoann/bvset.h
@@ -74,7 +74,7 @@ ccc843ee9ec667b88412ef4d4417f81f *man/random_knn.Rd
 92e79973403d5c1503c7698fc069021c *man/rnnd_build.Rd
 78af376feaf5be8dc703a9276c8ae995 *man/rnnd_knn.Rd
 c01f624d09d03bffdcbe9379ee6bdd65 *man/rnnd_query.Rd
-f40bd74c52b1a2dd7e970ccbfadb1d05 *man/rnndescent-package.Rd
+b5c82617398c135ffed22659604e864d *man/rnndescent-package.Rd
 26e1dd3da5cdc2d1ee2b27de93f29cb9 *man/rpf_build.Rd
 22dc4b879dcf2d9b0766e028b9b8461e *man/rpf_filter.Rd
 649d075eaeb54b7a23c758e9bb949f8e *man/rpf_knn.Rd
