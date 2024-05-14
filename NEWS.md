@@ -1,3 +1,17 @@
+# rnndescent 0.1.6
+
+* This is a patch release to fix an issue that occurred with the recent release
+of a new version of 'dqrng' on CRAN. Unfortunately, version 0.1.5 didn't quite
+work out. A fix for incorrect behavior for some metrics is also included (see
+below).
+
+## Bug fixes and minor improvements
+
+* Building an index with the `"cosine"`, `"jaccard"` or `"hellinger"` metrics
+could give incorrect results if maximally-dissimilar items were in the nearest
+neighbors. Thank you to [Maciej Beręsewicz](https://github.com/BERENZ) for the
+report (<https://github.com/jlmelville/rnndescent/issues/14>).
+
 # rnndescent 0.1.5
 
 * This is a minor release to change an internal API to support an upcoming
