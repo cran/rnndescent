@@ -2,7 +2,7 @@ Type: Package
 Package: rnndescent
 Title: Nearest Neighbor Descent Method for Approximate Nearest
         Neighbors
-Version: 0.1.6
+Version: 0.1.8
 Authors@R: c(
     person("James", "Melville", , "jlmelville@gmail.com", role = c("aut", "cre", "cph")),
     person("Vitalie", "Spinu", role = "ctb"),
@@ -21,13 +21,13 @@ Suggests: covr, knitr, rmarkdown, testthat
 LinkingTo: BH, dqrng, Rcpp, sitmo
 VignetteBuilder: knitr
 Encoding: UTF-8
-RoxygenNote: 7.3.1
+RoxygenNote: 7.3.2
 SystemRequirements: C++17
 NeedsCompilation: yes
-Packaged: 2024-05-14 05:59:48 UTC; jlmel
+Packaged: 2025-09-01 15:39:34 UTC; jlmel
 Author: James Melville [aut, cre, cph],
   Vitalie Spinu [ctb],
   Ralf Stubner [ctb]
 Maintainer: James Melville <jlmelville@gmail.com>
 Repository: CRAN
-Date/Publication: 2024-05-14 06:20:02 UTC
+Date/Publication: 2025-09-05 16:20:02 UTC
