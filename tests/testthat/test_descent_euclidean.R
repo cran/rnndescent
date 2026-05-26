@@ -69,7 +69,7 @@ expected_heap_sort_dist <- matrix(
 
 heap_sorted <- nnd_knn(ui10, 4, n_iters = 0, init = i10_rinit)
 expect_equal(heap_sorted$idx, expected_heap_sort_idx, check.attributes = FALSE)
-expect_equal(heap_sorted$dist, expected_heap_sort_dist, check.attributes = FALSE, tol = 1e-6)
+expect_equal(heap_sorted$dist, expected_heap_sort_dist, check.attributes = FALSE, tolerance = 1e-6)
 
 expected_idx <- matrix(
   c(
@@ -109,19 +109,19 @@ output <- capture_everything({
   rnn <- nnd_knn(ui10, 4, verbose = FALSE)
 })
 expect_equal(rnn$idx, expected_idx, check.attributes = FALSE)
-expect_equal(rnn$dist, expected_dist, check.attributes = FALSE, tol = 1e-6)
+expect_equal(rnn$dist, expected_dist, check.attributes = FALSE, tolerance = 1e-6)
 expect_equal(output, "character(0)")
 
 
 # default
 set.seed(1337)
 uiris_rnn <- nnd_knn(uirism, 15)
-expect_equal(sum(uiris_rnn$dist), ui_edsum, tol = 1e-3)
+expect_equal(sum(uiris_rnn$dist), ui_edsum, tolerance = 1e-3)
 
 # data frame can be input
 set.seed(1337)
 uiris_rnn <- nnd_knn(uiris, 15)
-expect_equal(sum(uiris_rnn$dist), ui_edsum, tol = 1e-3)
+expect_equal(sum(uiris_rnn$dist), ui_edsum, tolerance = 1e-3)
 
 # Create external initialization
 set.seed(1337)
@@ -130,17 +130,17 @@ iris_nbrs <- random_knn(uirism, 15)
 # initialize from existing knn graph
 set.seed(1337)
 iris_nnd <- nnd_knn(uirism, init = iris_nbrs)
-expect_equal(sum(iris_nnd$dist), ui_edsum, tol = 1e-3)
+expect_equal(sum(iris_nnd$dist), ui_edsum, tolerance = 1e-3)
 
 # initialize from rp forest
 set.seed(1337)
 iris_nnd <- nnd_knn(uirism, k = 15, init = "tree")
-expect_equal(sum(iris_nnd$dist), ui_edsum, tol = 1e-3)
+expect_equal(sum(iris_nnd$dist), ui_edsum, tolerance = 1e-3)
 
 # weight by degree
 set.seed(1337)
 iris_nndw <- nnd_knn(uirism, k = 15, init = "tree", weight_by_degree = TRUE)
-expect_equal(sum(iris_nndw$dist), ui_edsum, tol = 1e-3)
+expect_equal(sum(iris_nndw$dist), ui_edsum, tolerance = 1e-3)
 
 # initialize from existing knn graph with missing data
 set.seed(1337)
@@ -149,54 +149,99 @@ iris_nbrs_missing$idx[1, ] <- rep(0, ncol(iris_nbrs_missing$idx))
 iris_nbrs_missing$dist[1, ] <-
   rep(NA, ncol(iris_nbrs_missing$dist))
 iris_nnd <- nnd_knn(uirism, init = iris_nbrs_missing)
-expect_equal(sum(iris_nnd$dist), ui_edsum, tol = 1e-3)
+expect_equal(sum(iris_nnd$dist), ui_edsum, tolerance = 1e-3)
+
+# initialize from existing knn indices with missing data
+set.seed(1337)
+iris_nbrs_missing_idx <- iris_nbrs$idx
+iris_nbrs_missing_idx[1, ] <- rep(0L, ncol(iris_nbrs_missing_idx))
+iris_nnd <- nnd_knn(uirism, init = list(idx = iris_nbrs_missing_idx))
+expect_equal(sum(iris_nnd$dist), ui_edsum, tolerance = 1e-3)
 
 # initialize from existing knn indices
 set.seed(1337)
 iris_nnd <- nnd_knn(uirism, init = list(idx = iris_nbrs$idx))
-expect_equal(sum(iris_nnd$dist), ui_edsum, tol = 1e-3)
+expect_equal(sum(iris_nnd$dist), ui_edsum, tolerance = 1e-3)
 
 # Use larger initialization for smaller k
 set.seed(1337)
 iris_nnd <- nnd_knn(uirism, init = random_knn(uirism, 20), k = 15)
-expect_equal(sum(iris_nnd$dist), ui_edsum, tol = 1e-3)
+expect_equal(sum(iris_nnd$dist), ui_edsum, tolerance = 1e-3)
 
 # high memory mode
 set.seed(1337)
 iris_nnd <- nnd_knn(uirism, init = iris_nbrs, low_memory = FALSE)
-expect_equal(sum(iris_nnd$dist), ui_edsum, tol = 1e-3)
+expect_equal(sum(iris_nnd$dist), ui_edsum, tolerance = 1e-3)
 
 # init default with high memory
 set.seed(1337)
 uiris_rnn <- nnd_knn(uirism, 15, low_memory = FALSE)
-expect_equal(sum(uiris_rnn$dist), ui_edsum, tol = 1e-3)
+expect_equal(sum(uiris_rnn$dist), ui_edsum, tolerance = 1e-3)
 
 # max candidates
 set.seed(1337)
 iris_nnd <- nnd_knn(uirism, init = iris_nbrs, max_candidates = 10)
-expect_equal(sum(iris_nnd$dist), ui_edsum, tol = 1e-3)
+expect_equal(sum(iris_nnd$dist), ui_edsum, tolerance = 1e-3)
 
 # turn off alt metric
 set.seed(1337)
 ui10_rnn <- nnd_knn(ui10, 4, use_alt_metric = FALSE)
-expect_equal(sum(ui10_rnn$dist), ui10_edsum, tol = 1e-3)
+expect_equal(sum(ui10_rnn$dist), ui10_edsum, tolerance = 1e-3)
 
 # augment with random
 set.seed(1337)
 ui10_rnnk2 <- nnd_knn(ui10, 2, use_alt_metric = FALSE)
 ui10_rnn <- nnd_knn(ui10, 4, init = ui10_rnnk2)
-expect_equal(sum(ui10_rnn$dist), ui10_edsum, tol = 1e-3)
+expect_equal(sum(ui10_rnn$dist), ui10_edsum, tolerance = 1e-3)
 
 # errors
 expect_error(nnd_knn(ui10), "provide k")
 expect_error(nnd_knn(ui10, k = 11), "k must be")
+expect_error(nnd_knn(ui10, k = 0), "k must be")
+expect_error(nnd_knn(ui10, k = 4, delta = -0.1), "delta must be")
+expect_error(nnd_knn(ui10, k = 4, delta = 1.1), "delta must be")
+expect_error(nnd_knn(ui10, k = 4, n_iters = 1.5), "n_iters must be")
+expect_error(nnd_knn(ui10, k = 4, max_candidates = 0), "max_candidates must be")
+expect_error(nnd_knn(ui10, k = 4, max_candidates = 1.5), "max_candidates must be")
+expect_error(rnnd_knn(ui10, k = 4, leaf_size = 0), "leaf_size must be")
 expect_error(nnd_knn(uirism, k = 15, init = iris_nbrs, metric = "not-a-real metric"), "metric")
-expect_error(nnd_knn(uirism, init = list(dist = iris_nbrs$dist, idx = iris_nbrs$idx - 2)), "Bad indexes")
+expect_error(
+  nnd_knn(uirism, init = list(dist = iris_nbrs$dist, idx = iris_nbrs$idx - 2)),
+  "initial neighbor graph indices must be between"
+)
+expect_error(
+  nnd_knn(
+    matrix(c(0, 0, 1, 1, 2, 2), ncol = 2, byrow = TRUE),
+    k = 1,
+    init = list(idx = matrix(4L, nrow = 3, ncol = 1))
+  ),
+  "initial neighbor graph indices must be between 1 and 3 or 0 for missing entries"
+)
+
+test_that("descent and graph query APIs reject invalid n_threads values", {
+  expect_error(nnd_knn(ui10, k = 4, n_threads = -1), "n_threads must be")
+
+  ref_graph <- nnd_knn(ui6, k = 4)
+  expect_error(
+    graph_knn_query(
+      reference = ui6,
+      reference_graph = ref_graph,
+      query = ui4,
+      k = 4,
+      n_threads = 1.5
+    ),
+    "n_threads must be"
+  )
+})
 
 # verbosity
 msgs <- capture_everything(nnd_knn(ui10, 4, verbose = TRUE))
 expect_match(msgs, "\\*\\*\\*")
 expect_match(msgs, "Convergence")
+
+msgs <- capture_everything(nnd_knn(ui10, 4, verbose = TRUE, progress = "BAR"))
+expect_match(msgs, "\\*\\*\\*")
+expect_false(grepl("1 / ", msgs))
 
 msgs <- capture_everything(nnd_knn(ui10, 4, verbose = TRUE, progress = "dist", n_iters = 10))
 expect_match(msgs, "1 / 10")
@@ -207,17 +252,17 @@ expect_match(msgs, "Convergence")
 # multi-threading
 set.seed(1337)
 uiris_rnn <- nnd_knn(uirism, 15, n_threads = 1)
-expect_equal(sum(uiris_rnn$dist), ui_edsum, tol = 1e-3)
+expect_equal(sum(uiris_rnn$dist), ui_edsum, tolerance = 1e-3)
 
 # with caching
 set.seed(1337)
 uiris_rnn <- nnd_knn(uirism, 15, n_threads = 1, low_memory = FALSE)
-expect_equal(sum(uiris_rnn$dist), ui_edsum, tol = 1e-3)
+expect_equal(sum(uiris_rnn$dist), ui_edsum, tolerance = 1e-3)
 
 # initialize from existing knn indices
 set.seed(1337)
 iris_nnd <- nnd_knn(uirism, init = list(idx = iris_nbrs$idx), n_threads = 1)
-expect_equal(sum(iris_nnd$dist), ui_edsum, tol = 1e-3)
+expect_equal(sum(iris_nnd$dist), ui_edsum, tolerance = 1e-3)
 
 # Queries -----------------------------------------------------------------
 
@@ -227,89 +272,127 @@ set.seed(1337)
 ui6_nnd <- nnd_knn(ui6, k = 4)
 ui6_nnd_idx_copy <- copy(ui6_nnd$idx)
 qnbrs4 <- graph_knn_query(reference = ui6, reference_graph = ui6_nnd, query = ui4, k = 4)
-check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 4, expected_dist = ui10_eucd, tol = 1e-6)
-expect_equal(sum(qnbrs4$dist), ui4q_edsum, tol = 1e-6)
+check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 4, expected_dist = ui10_eucd, tolerance = 1e-6)
+expect_equal(sum(qnbrs4$dist), ui4q_edsum, tolerance = 1e-6)
 expect_equal(ui6_nnd$idx, ui6_nnd_idx_copy)
 
 set.seed(1337)
 ui4_nnd <- nnd_knn(ui4, k = 4)
 qnbrs6 <- graph_knn_query(reference = ui4, reference_graph = ui4_nnd, query = ui6, k = 4)
-check_query_nbrs(nn = qnbrs6, query = ui6, ref_range = 7:10, query_range = 1:6, k = 4, expected_dist = ui10_eucd, tol = 1e-6)
-expect_equal(sum(qnbrs6$dist), ui6q_edsum, tol = 1e-6)
+check_query_nbrs(nn = qnbrs6, query = ui6, ref_range = 7:10, query_range = 1:6, k = 4, expected_dist = ui10_eucd, tolerance = 1e-6)
+expect_equal(sum(qnbrs6$dist), ui6q_edsum, tolerance = 1e-6)
 
 # turn off alt metric
 set.seed(1337)
 qnbrs6 <- graph_knn_query(reference = ui4, reference_graph = ui4_nnd, query = ui6, k = 4, use_alt_metric = FALSE)
-check_query_nbrs(nn = qnbrs6, query = ui6, ref_range = 7:10, query_range = 1:6, k = 4, expected_dist = ui10_eucd, tol = 1e-6)
-expect_equal(sum(qnbrs6$dist), ui6q_edsum, tol = 1e-6)
+check_query_nbrs(nn = qnbrs6, query = ui6, ref_range = 7:10, query_range = 1:6, k = 4, expected_dist = ui10_eucd, tolerance = 1e-6)
+expect_equal(sum(qnbrs6$dist), ui6q_edsum, tolerance = 1e-6)
 
 # initialize separately
 rnbrs4 <- random_knn_query(reference = ui6, query = ui4, k = 4)
 rnbrs4_idx_copy <- copy(rnbrs4$idx)
 qnbrs4 <- graph_knn_query(reference = ui6, reference_graph = ui6_nnd, query = ui4, init = rnbrs4)
-check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 4, expected_dist = ui10_eucd, tol = 1e-6)
-expect_equal(sum(qnbrs4$dist), ui4q_edsum, tol = 1e-6)
+check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 4, expected_dist = ui10_eucd, tolerance = 1e-6)
+expect_equal(sum(qnbrs4$dist), ui4q_edsum, tolerance = 1e-6)
 expect_equal(rnbrs4$idx, rnbrs4_idx_copy)
 
 # initialize separately and reduce graph
 rnbrs5 <- random_knn_query(reference = ui6, query = ui4, k = 5)
 qnbrs4 <- graph_knn_query(reference = ui6, reference_graph = ui6_nnd, query = ui4, init = rnbrs5, k = 4)
-check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 4, expected_dist = ui10_eucd, tol = 1e-6)
-expect_equal(sum(qnbrs4$dist), ui4q_edsum, tol = 1e-6)
+check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 4, expected_dist = ui10_eucd, tolerance = 1e-6)
+expect_equal(sum(qnbrs4$dist), ui4q_edsum, tolerance = 1e-6)
 
 # chop down reference index if needed
 qnbrs4 <- graph_knn_query(reference = ui6, reference_graph = ui6_nnd, query = ui4, init = rnbrs5, k = 3)
-check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 3, expected_dist = ui10_eucd, tol = 1e-6)
+check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 3, expected_dist = ui10_eucd, tolerance = 1e-6)
 
 # use k from reference indices
 qnbrs6 <- graph_knn_query(reference = ui4, reference_graph = ui4_nnd, query = ui6)
-check_query_nbrs(nn = qnbrs6, query = ui6, ref_range = 7:10, query_range = 1:6, k = 4, expected_dist = ui10_eucd, tol = 1e-6)
-expect_equal(sum(qnbrs6$dist), ui6q_edsum, tol = 1e-6)
+check_query_nbrs(nn = qnbrs6, query = ui6, ref_range = 7:10, query_range = 1:6, k = 4, expected_dist = ui10_eucd, tolerance = 1e-6)
+expect_equal(sum(qnbrs6$dist), ui6q_edsum, tolerance = 1e-6)
 
 # initialize from existing knn indices
 qnbrs4 <- graph_knn_query(reference = ui6, reference_graph = ui6_nnd, query = ui4, init = list(idx = rnbrs4$idx))
-check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 4, expected_dist = ui10_eucd, tol = 1e-6)
-expect_equal(sum(qnbrs4$dist), ui4q_edsum, tol = 1e-6)
+check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 4, expected_dist = ui10_eucd, tolerance = 1e-6)
+expect_equal(sum(qnbrs4$dist), ui4q_edsum, tolerance = 1e-6)
 expect_equal(rnbrs4$idx, rnbrs4_idx_copy)
+
+# initialize from existing knn indices with missing data
+set.seed(1337)
+rnbrs4_missing_idx <- rnbrs4$idx
+rnbrs4_missing_idx[1, ] <- rep(0L, ncol(rnbrs4_missing_idx))
+qnbrs4 <- graph_knn_query(
+  reference = ui6,
+  reference_graph = ui6_nnd,
+  query = ui4,
+  init = list(idx = rnbrs4_missing_idx)
+)
+check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 4, expected_dist = ui10_eucd, tolerance = 1e-6)
+expect_equal(sum(qnbrs4$dist), ui4q_edsum, tolerance = 1e-6)
 
 # multi-threading
 set.seed(1337)
 qnbrs6 <- graph_knn_query(reference = ui4, reference_graph = ui4_nnd, query = ui6, k = 4, n_threads = 1)
-check_query_nbrs(nn = qnbrs6, query = ui6, ref_range = 7:10, query_range = 1:6, k = 4, expected_dist = ui10_eucd, tol = 1e-6)
-expect_equal(sum(qnbrs6$dist), ui6q_edsum, tol = 1e-6)
+check_query_nbrs(nn = qnbrs6, query = ui6, ref_range = 7:10, query_range = 1:6, k = 4, expected_dist = ui10_eucd, tolerance = 1e-6)
+expect_equal(sum(qnbrs6$dist), ui6q_edsum, tolerance = 1e-6)
 
 qnbrs4 <- graph_knn_query(reference = ui6, reference_graph = ui6_nnd, query = ui4, k = 4, n_threads = 1)
-check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 4, expected_dist = ui10_eucd, tol = 1e-6)
-expect_equal(sum(qnbrs4$dist), ui4q_edsum, tol = 1e-6)
+check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 4, expected_dist = ui10_eucd, tolerance = 1e-6)
+expect_equal(sum(qnbrs4$dist), ui4q_edsum, tolerance = 1e-6)
 
 # initialize from existing knn indices
 qnbrs4 <- graph_knn_query(reference = ui6, reference_graph = ui6_nnd, query = ui4, init = list(idx = rnbrs4$idx), n_threads = 1)
-check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 4, expected_dist = ui10_eucd, tol = 1e-6)
-expect_equal(sum(qnbrs4$dist), ui4q_edsum, tol = 1e-6)
+check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 4, expected_dist = ui10_eucd, tolerance = 1e-6)
+expect_equal(sum(qnbrs4$dist), ui4q_edsum, tolerance = 1e-6)
 expect_equal(rnbrs4$idx, rnbrs4_idx_copy)
 
 # initialize from existing matrix
 qnbrs4 <- graph_knn_query(reference = ui6, reference_graph = ui6_nnd, query = ui4, init = rnbrs4$idx, n_threads = 1)
-check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 4, expected_dist = ui10_eucd, tol = 1e-6)
-expect_equal(sum(qnbrs4$dist), ui4q_edsum, tol = 1e-6)
+check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 4, expected_dist = ui10_eucd, tolerance = 1e-6)
+expect_equal(sum(qnbrs4$dist), ui4q_edsum, tolerance = 1e-6)
 expect_equal(rnbrs4$idx, rnbrs4_idx_copy)
 
 # augment with random
 set.seed(1337)
 rnbrs2 <- random_knn_query(reference = ui6, query = ui4, k = 2)
 qnbrs4 <- graph_knn_query(reference = ui6, reference_graph = ui6_nnd, query = ui4, init = rnbrs2, k = 4)
-check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 4, expected_dist = ui10_eucd, tol = 1e-6)
-expect_equal(sum(qnbrs4$dist), ui4q_edsum, tol = 1e-6)
+check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 4, expected_dist = ui10_eucd, tolerance = 1e-6)
+expect_equal(sum(qnbrs4$dist), ui4q_edsum, tolerance = 1e-6)
 
 # max_search_fraction
 qnbrs4 <- graph_knn_query(reference = ui6, reference_graph = ui6_nnd, query = ui4, k = 4, max_search_fraction = 0.0, init = rnbrs4)
 expect_equal(qnbrs4, rnbrs4)
 
+budget_ref <- matrix(c(0, 0, 1, 0, 2, 0), ncol = 2, byrow = TRUE)
+budget_graph <- list(
+  idx = matrix(c(3L, 2L, 3L), ncol = 1),
+  dist = matrix(c(0.1, 0, 0), ncol = 1)
+)
+budget_query <- matrix(c(2.1, 0), nrow = 1)
+budget_init <- list(
+  idx = matrix(1L, nrow = 1),
+  dist = matrix(2.1, nrow = 1)
+)
+budgeted <- graph_knn_query(
+  reference = budget_ref,
+  reference_graph = budget_graph,
+  query = budget_query,
+  init = budget_init,
+  k = 1,
+  max_search_fraction = 1 / nrow(budget_ref)
+)
+expect_equal(budgeted$idx, matrix(3L, nrow = 1))
+expect_equal(budgeted$dist, matrix(0.1, nrow = 1), tolerance = 1e-6)
+
 # errors
 expect_error(graph_knn_query(
   reference = ui4, reference_graph = ui4_nnd,
   query = ui6, k = 5
-), "must be <=")
+), "k must be")
+expect_error(graph_knn_query(
+  reference = ui4, reference_graph = ui4_nnd,
+  query = ui6, k = 0
+), "k must be")
 expect_error(graph_knn_query(
   reference = ui4, reference_graph = ui4_nnd,
   query = ui6, k = 4, metric = "not-a-real metric"
@@ -318,17 +401,131 @@ expect_error(graph_knn_query(
   reference = ui6, reference_graph = ui6_nnd,
   query = ui4, init = rnbrs4, metric = "not-a-real metric"
 ), "metric")
+expect_error(graph_knn_query(
+  reference = ui6, reference_graph = ui6_nnd,
+  query = ui4, k = 4, epsilon = -0.1
+), "epsilon must be")
+expect_error(graph_knn_query(
+  reference = ui6, reference_graph = ui6_nnd,
+  query = ui4, k = 4, max_search_fraction = 1.1
+), "max_search_fraction must be")
+expect_error(graph_knn_query(
+  reference = matrix(0, nrow = 2, ncol = 2),
+  reference_graph = ui6_nnd,
+  query = matrix(0, nrow = 2, ncol = 3),
+  k = 1
+), "same number of features")
+expect_error(graph_knn_query(
+  reference = matrix(0, nrow = 2, ncol = 2),
+  reference_graph = ui6_nnd,
+  query = matrix(0, nrow = 3, ncol = 2),
+  k = 1,
+  obs = "C"
+), "same number of features")
+expect_error(graph_knn_query(
+  reference = matrix(c(0, 0, 1, 1, 2, 2), ncol = 2, byrow = TRUE),
+  reference_graph = Matrix::sparseMatrix(
+    i = c(1L, 2L),
+    j = c(2L, 1L),
+    x = c(1, 1),
+    dims = c(2, 2)
+  ),
+  query = matrix(c(2, 2), nrow = 1),
+  k = 1,
+  init = list(
+    idx = matrix(1L, nrow = 1),
+    dist = matrix(sqrt(8), nrow = 1)
+  )
+), "reference_graph must have dimensions 3 x 3")
+mini_ref <- matrix(c(0, 0, 1, 1, 2, 2), ncol = 2, byrow = TRUE)
+mini_ref_graph <- nnd_knn(mini_ref, k = 1)
+expect_error(graph_knn_query(
+  reference = mini_ref,
+  reference_graph = mini_ref_graph,
+  query = matrix(c(2, 2), nrow = 1),
+  init = list(idx = matrix(4L, nrow = 1, ncol = 1)),
+  k = 1
+), "initial neighbor graph indices must be between 1 and 3 or 0 for missing entries")
+expect_error(graph_knn_query(
+  reference = mini_ref,
+  reference_graph = mini_ref_graph,
+  query = matrix(c(2, 2), nrow = 1),
+  init = list(idx = matrix(c(1L, 2L), nrow = 2, ncol = 1)),
+  k = 1
+), "initial neighbor graph must have 1 rows")
+
+test_that("shared random fill completes feasible init graphs", {
+  ref <- matrix(c(0, 0, 1, 0, 2, 0), ncol = 2, byrow = TRUE)
+  dist_ref <- as.matrix(stats::dist(ref))
+  missing_self_init <- list(
+    idx = matrix(0L, nrow = 3, ncol = 3),
+    dist = matrix(NA_real_, nrow = 3, ncol = 3)
+  )
+
+  set.seed(1)
+  self_res <- nnd_knn(
+    ref,
+    k = 3,
+    init = missing_self_init,
+    n_iters = 0,
+    use_alt_metric = FALSE
+  )
+
+  expect_false(any(self_res$idx == 0L))
+  expect_false(anyNA(self_res$dist))
+  for (i in seq_len(nrow(self_res$idx))) {
+    expect_equal(sort(self_res$idx[i, ]), 1:3)
+    ordered <- order(self_res$idx[i, ])
+    expect_equal(
+      unname(self_res$dist[i, ordered]),
+      unname(dist_ref[i, self_res$idx[i, ordered]]),
+      tolerance = 1e-6
+    )
+  }
+
+  query <- matrix(c(0.1, 0), nrow = 1)
+  search_graph <- prepare_search_graph(
+    ref,
+    brute_force_knn(ref, k = 3),
+    use_alt_metric = FALSE,
+    diversify_prob = NULL,
+    pruning_degree_multiplier = NULL
+  )
+  missing_query_init <- list(
+    idx = matrix(0L, nrow = 1, ncol = 3),
+    dist = matrix(NA_real_, nrow = 1, ncol = 3)
+  )
+
+  set.seed(1)
+  query_res <- graph_knn_query(
+    reference = ref,
+    reference_graph = search_graph,
+    query = query,
+    init = missing_query_init,
+    k = 3,
+    epsilon = 0,
+    max_search_fraction = 0,
+    use_alt_metric = FALSE
+  )
+
+  expect_equal(query_res$idx, matrix(1:3, nrow = 1))
+  expect_equal(
+    query_res$dist,
+    matrix(c(0.1, 0.9, 1.9), nrow = 1),
+    tolerance = 1e-6
+  )
+})
 
 test_that("column oriented", {
   set.seed(1337)
   uiris_rnn <- nnd_knn(t(uirism), 15, obs = "C", n_threads = 2)
-  expect_equal(sum(uiris_rnn$dist), ui_edsum, tol = 1e-3)
+  expect_equal(sum(uiris_rnn$dist), ui_edsum, tolerance = 1e-3)
 
   set.seed(1337)
   ui4_nnd <- nnd_knn(ui4, k = 4)
   qnbrs6 <- graph_knn_query(reference = t(ui4), reference_graph = ui4_nnd, query = t(ui6), k = 4, obs = "C", n_threads = 2)
-  check_query_nbrs(nn = qnbrs6, query = ui6, ref_range = 7:10, query_range = 1:6, k = 4, expected_dist = ui10_eucd, tol = 1e-6)
-  expect_equal(sum(qnbrs6$dist), ui6q_edsum, tol = 1e-6)
+  check_query_nbrs(nn = qnbrs6, query = ui6, ref_range = 7:10, query_range = 1:6, k = 4, expected_dist = ui10_eucd, tolerance = 1e-6)
+  expect_equal(sum(qnbrs6$dist), ui6q_edsum, tolerance = 1e-6)
 })
 
 test_that("sparse", {
@@ -339,19 +536,38 @@ test_that("sparse", {
   expect_equal(dznbrs, spnbrs)
   set.seed(1337)
   spnbrs <- nnd_knn(ui10sp, k = 4, n_threads = 0, metric = "euclidean", use_alt_metric = FALSE)
-  expect_equal(dznbrs, spnbrs, tol = 1e-7)
+  expect_equal(dznbrs, spnbrs, tolerance = 1e-7)
 
   # sparse uncorrection
   set.seed(1337)
   spnbrs <- nnd_knn(ui10sp, k = 4, n_threads = 0, metric = "euclidean", init = random_knn(ui10sp, k = 4))
-  expect_equal(dznbrs, spnbrs, tol = 1e-7)
+  expect_equal(dznbrs, spnbrs, tolerance = 1e-7)
 
   g6 <- brute_force_knn(ui10z6, k = 4)
   set.seed(1337)
   dq4 <- graph_knn_query(reference = ui10z6, query = ui10z4, reference_graph = g6, k = 4)
   set.seed(1337)
   sq4 <- graph_knn_query(reference = ui10sp6, query = ui10sp4, reference_graph = g6, k = 4)
-  expect_equal(sq4, dq4, tol = 1e-6)
+  expect_equal(sq4, dq4, tolerance = 1e-6)
+})
+
+test_that("descent and graph query normalize non-dgC sparse inputs", {
+  data_r <- methods::as(ui10sp, "RsparseMatrix")
+  ref_r <- methods::as(ui10sp6, "RsparseMatrix")
+  query_r <- methods::as(ui10sp4, "RsparseMatrix")
+
+  set.seed(1337)
+  expected_nnd <- nnd_knn(ui10sp, k = 4, n_threads = 0, metric = "euclidean")
+  set.seed(1337)
+  observed_nnd <- nnd_knn(data_r, k = 4, n_threads = 0, metric = "euclidean")
+  expect_equal(observed_nnd, expected_nnd, tolerance = 1e-6)
+
+  ref_graph <- brute_force_knn(ui10sp6, k = 4)
+  set.seed(1337)
+  expected_query <- graph_knn_query(reference = ui10sp6, query = ui10sp4, reference_graph = ref_graph, k = 4)
+  set.seed(1337)
+  observed_query <- graph_knn_query(reference = ref_r, query = query_r, reference_graph = ref_graph, k = 4)
+  expect_equal(observed_query, expected_query, tolerance = 1e-6)
 })
 
 

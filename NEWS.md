@@ -1,7 +1,44 @@
-# rnndescent 0.1.7
+# rnndescent 0.2.0
+
+## New features
+
+* Add `haversine` metric for 2D latitude/longitude data in radians. This is
+one of the metrics that was in PyNNDescent but I neglected to add to
+rnndescent for its initial release. Thank you to
+[Josiah Parry](https://github.com/JosiahParry) whose request nudged me to fill
+this gap (<https://github.com/jlmelville/rnndescent/issues/17>).
+
+## Bug fixes and minor improvements
+
+* Much improved input validation.
+* Non-`dgCMatrix` `sparseMatrix` inputs, such as `dgRMatrix` and `dgTMatrix` are
+now normalized to `dgCMatrix` on input. Other matrices fail with a clearer error.
+* Fix for `prepare_search_graph()` sometimes over-pruning beyond `max_degree`.
+* Fix explicit-margin RP-tree builds for `metric = "dice"` and `"hamming"` to
+use angular split geometry.
+* Fix for `rpf_build(obs = "C")` where default `n_trees` used the number of
+features not the number of observations.
+* Fix `nnd_knn()` and `graph_knn_query()` sometimes failing to completely randomly fill
+the initial search graph when needed.
+* Fix for `prepare_search_graph(prune_reverse = TRUE)` not pruning reverse edges
+when `diversify_prob = 0`.
+* Fix for edge case when `max_search_fraction` would only result in one
+calculation, but this distance was never used.
+* Fixes for `k_occur()` when using graphs with missing data and sparse graphs
+with anti-hubs.
+* Verbose query summaries now report the correct minimum and average number of
+distance calculations.
+* Minor parallel execution robustness improvements: errors propagate back to R
+and some worker launches are avoided with small workloads.
+* Minor C++ portability improvements for CRAN builds and high-dimensional
+logical metrics.
+* Some C++ changes to avoid a (probably false positive) gcc16 compiler warning
+found by CRAN checks.
+
+# rnndescent 0.1.8
 
 This is a patch release to fix some M1 Mac test failures as part of CRAN checks.
-No changes to non-test code.
+No changes to non-test code (0.1.7 was a failed submission).
 
 # rnndescent 0.1.6
 
@@ -34,7 +71,7 @@ There is a minor increase in computation but also a minor increase in accuracy.
 
 ## Bug fixes and minor improvements
 
-* `rnnd_build` generated an error when preparing the search graph for some 
+* `rnnd_build` generated an error when preparing the search graph for some
 metrics (notably `cosine` and `jaccard`).
 * Fix a factor of 2 error in the TS-SS metric. This does not affect the returned
 neighbors, just the distances. Thank you to reporter

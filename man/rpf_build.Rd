@@ -38,6 +38,9 @@ matrix first (otherwise you will get the slower dense numerical version).}
 \item \code{"dice"}
 \item \code{"euclidean"}
 \item \code{"hamming"}
+\item \code{"haversine"} (great-circle distance for 2D latitude/longitude in
+\emph{radians}; an error will be raised if values that appear to be supplied in
+degrees are encountered)
 \item \code{"hellinger"}
 \item \code{"jaccard"}
 \item \code{"jensenshannon"}
@@ -147,7 +150,7 @@ usage.}
 a forest of random projection trees as a list. Each tree in the
 forest is a further list, but is not intended to be examined or manipulated
 by the user. As a normal R data type, it can be safely serialized and
-deserialized with \code{\link[base:readRDS]{base::saveRDS()}} and \code{\link[base:readRDS]{base::readRDS()}}. To use it for
+deserialized with \code{\link[base:saveRDS]{base::saveRDS()}} and \code{\link[base:readRDS]{base::readRDS()}}. To use it for
 querying pass it as the \code{forest} parameter of \code{\link[=rpf_knn_query]{rpf_knn_query()}}. The forest
 does not store any of the \code{data} passed into build the tree, so if you
 are going to search the forest, you will also need to store the \code{data} used

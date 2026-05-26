@@ -24,6 +24,9 @@
 #'   - `"dice"`
 #'   - `"euclidean"`
 #'   - `"hamming"`
+#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
+#' *radians*; an error will be raised if values that appear to be supplied in
+#' degrees are encountered)
 #'   - `"hellinger"`
 #'   - `"jaccard"`
 #'   - `"jensenshannon"`
@@ -168,6 +171,7 @@ rpf_knn <- function(data,
                     verbose = FALSE,
                     obs = "R") {
   obs <- match.arg(toupper(obs), c("C", "R"))
+  n_threads <- check_n_threads(n_threads)
   n_obs <- switch(obs,
     R = nrow,
     C = ncol,
@@ -230,6 +234,9 @@ rpf_knn <- function(data,
 #'   - `"dice"`
 #'   - `"euclidean"`
 #'   - `"hamming"`
+#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
+#' *radians*; an error will be raised if values that appear to be supplied in
+#' degrees are encountered)
 #'   - `"hellinger"`
 #'   - `"jaccard"`
 #'   - `"jensenshannon"`
@@ -356,18 +363,22 @@ rpf_build <- function(data,
                       verbose = FALSE,
                       obs = "R") {
   obs <- match.arg(toupper(obs), c("C", "R"))
+  n_threads <- check_n_threads(n_threads)
   n_obs <- switch(obs,
     R = nrow,
     C = ncol,
     stop("Unknown obs type")
   )
 
+  data <- x2m(data)
+
   if (is.null(n_trees)) {
-    n_trees <- 5 + as.integer(round(nrow(data)^0.25))
+    n_trees <- 5 + as.integer(round(n_obs(data)^0.25))
     n_trees <- min(32, n_trees)
   }
-
-  data <- x2m(data)
+  n_trees <- check_count(n_trees, "n_trees")
+  leaf_size <- check_count(leaf_size, "leaf_size")
+  max_tree_depth <- check_count(max_tree_depth, "max_tree_depth", min = 0L)
 
   margin <- find_margin_method(margin, metric, data)
 
@@ -538,6 +549,7 @@ rpf_knn_query <- function(query,
                           verbose = FALSE,
                           obs = "R") {
   obs <- match.arg(toupper(obs), c("C", "R"))
+  n_threads <- check_n_threads(n_threads)
   n_obs <- switch(obs,
     R = nrow,
     C = ncol,
@@ -548,7 +560,13 @@ rpf_knn_query <- function(query,
 
   reference <- x2m(reference)
   query <- x2m(query)
+  check_matching_features(reference, query, obs)
   check_k(k, n_obs(reference))
+  n_features <- switch(obs,
+    R = ncol(reference),
+    C = nrow(reference),
+    stop("Unknown obs type")
+  )
 
   if (!is.list(forest)) {
     stop("Bad forest format: not a list")
@@ -562,6 +580,7 @@ rpf_knn_query <- function(query,
   if (!is_sparse(reference) && forest$sparse) {
     stop("Incompatible dense forest used with sparse input data")
   }
+  check_rpforest_matches_reference(forest, n_obs(reference), n_features)
 
   if (obs == "R") {
     reference <- Matrix::t(reference)
@@ -680,6 +699,7 @@ rpf_filter <-
            n_trees = 1,
            n_threads = 0,
            verbose = FALSE) {
+    n_threads <- check_n_threads(n_threads)
     if (is.null(forest)) {
       if (is.null(nn$forest)) {
         stop("Must provide 'forest' parameter")
@@ -687,14 +707,14 @@ rpf_filter <-
       forest <- nn$forest
     }
 
+    validate_nn_graph(nn)
+
     unfiltered_trees <- forest$trees
     n_unfiltered_trees <- length(unfiltered_trees)
     if (n_unfiltered_trees < 1) {
       stop("Invalid forest: no trees")
     }
-    if (n_trees < 1 || n_trees > n_unfiltered_trees) {
-      stop("n_trees must be between 1 and ", n_unfiltered_trees)
-    }
+    n_trees <- check_count(n_trees, "n_trees", max = n_unfiltered_trees)
 
     n_orig_idx <- length(unfiltered_trees[[1]]$indices)
     if (n_orig_idx != nrow(nn$idx)) {

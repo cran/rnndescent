@@ -48,8 +48,9 @@ overflow: visible;
 }
 </style>
 <style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
 pre > code.sourceCode { white-space: pre; position: relative; }
-pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
 pre > code.sourceCode > span:empty { height: 1.2em; }
 .sourceCode { overflow: visible; }
 code.sourceCode > span { color: inherit; text-decoration: inherit; }
@@ -60,7 +61,7 @@ div.sourceCode { overflow: auto; }
 }
 @media print {
 pre > code.sourceCode { white-space: pre-wrap; }
-pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
 }
 pre.numberSource code
 { counter-reset: source-line 0; }
@@ -148,7 +149,6 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; }
 div.csl-bib-body { }
 div.csl-entry {
 clear: both;
-margin-bottom: 0em;
 }
 .hanging div.csl-entry {
 margin-left:2em;
@@ -364,13 +364,14 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 
 
 <div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(rnndescent)</span></code></pre></div>
-<p>Nearest Neighbor Descent (NND) <span class="citation">(Dong, Moses,
-and Li 2011)</span> is affected by hubness <span class="citation">(Bratić et al. 2019)</span>: this is when some items in
-a dataset appear as a near neighbor of other points very frequently.
-This can result in reduced accuracy of the approximate nearest neighbor
-graph produced by NND and may be an intrinsic problem in high
-dimensional datasets (although see <span class="citation">(Low et al.
-2013)</span> for a dissenting view).</p>
+<p>Nearest Neighbor Descent (NND) <span class="citation">(Dong et al.
+2011)</span> is affected by hubness <span class="citation">(Bratić et
+al. 2019)</span>: this is when some items in a dataset appear as a near
+neighbor of other points very frequently. This can result in reduced
+accuracy of the approximate nearest neighbor graph produced by NND and
+may be an intrinsic problem in high dimensional datasets (although see
+<span class="citation">(Low et al. 2013)</span> for a dissenting
+view).</p>
 <p>In this vignette we will use synthetic data to explore the issue, and
 use the k-occurrences of a neighbor graph to identify when NND is at
 risk of producing less accurate results. We will also look at some ways
@@ -499,14 +500,14 @@ others.</p>
 </div>
 <div id="detecting-hubness" class="section level2">
 <h2>Detecting Hubness</h2>
-<p><span class="citation">(Radovanovic, Nanopoulos, and Ivanovic
-2010)</span> discusses a technique for detecting hubness: look for items
-that appear very frequently in the k-nearest neighbor graph. The
-<code>k_occur</code> function counts “k-occurrences” of each item in a
-dataset, i.e. a count of the number of times an item appears in the
-k-nearest neighbor graph. You can also see it as reversing the direction
-of the edges in the k-nearest neighbor graph and then counting the
-in-degree of each item.</p>
+<p><span class="citation">(Radovanovic et al. 2010)</span> discusses a
+technique for detecting hubness: look for items that appear very
+frequently in the k-nearest neighbor graph. The <code>k_occur</code>
+function counts “k-occurrences” of each item in a dataset, i.e. a count
+of the number of times an item appears in the k-nearest neighbor graph.
+You can also see it as reversing the direction of the edges in the
+k-nearest neighbor graph and then counting the in-degree of each
+item.</p>
 <p>If the distribution of neighbors was entirely uniform we would expect
 to see each item appear <span class="math inline">\(k\)</span> times. If
 there are hubs then the k-occurrence could get as large as the size of
@@ -943,10 +944,10 @@ of edges is a bit more equitable.</p>
 graph:</p>
 <div class="sourceCode" id="cb52"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb52-1"><a href="#cb52-1" tabindex="-1"></a>g1000d_sgko <span class="ot">&lt;-</span> <span class="fu">k_occur</span>(g1000d_search_graph)</span>
 <span id="cb52-2"><a href="#cb52-2" tabindex="-1"></a><span class="fu">hist</span>(g1000d_sgko, <span class="at">main =</span> <span class="st">&quot;search graph k-occurrences&quot;</span>, <span class="at">xlab =</span> <span class="st">&quot;k-occurrences&quot;</span>)</span></code></pre></div>
-<p><img role="img" src="data:image/png;base64,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" /><!-- --></p>
+<p><img role="img" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAYAAAAGACAMAAACTGUWNAAAAw1BMVEUAAAAAADoAAGYAOjoAOmYAOpAAZpAAZrY6AAA6ADo6AGY6OgA6Ojo6OmY6OpA6ZpA6ZrY6kLY6kNtmAABmADpmOgBmOjpmZgBmkLZmkNtmtrZmtttmtv+QOgCQZgCQZjqQkGaQkLaQtpCQttuQtv+Q29uQ2/+2ZgC2Zjq2kDq2kGa227a229u22/+2/7a2/9u2///T09PbkDrbkGbbtmbbtpDb27bb29vb/7bb/9vb////tmb/25D/27b//7b//9v////a+A4vAAAACXBIWXMAAA7DAAAOwwHHb6hkAAAQAUlEQVR4nO2dC3fjthGFrzfr2u0mTWolafNwkyatlTZxu1XzaC2vpP//q0IABAFBpIghQYzqme8cyzABXAxwxZclEDgorIA7AOmAOwDpgDsA6YA7AOmAOwDpgDsA6YA7AOmAOwDpgDsA6YA7AOmAOwDpgDsA6YA7AOmAOwDpgDsA6YA7AOmAOwDpgDsA6YA7AOmAOwDpgDsA6YA7AOmAOwDpgDsA6YA7AOmAOwDpgDsA6YA7AOmAOwDpgDsA6YA7AOmAOwDpgDsAwwZXD8XqrvHq7eyI6gHuAAxqADNqQEn+8wa4+vDRJPffNcmPnkzyp08AfGCGqhmxbz7Bq6bAj03J975wm/7WFH0dRnJv/7Rj2ZUPEs327z9tCjz21bWVdivbQstPTeH3/mTjCI1GSedZU+cuhNc1Gzpx3FQQiroZdT4TkAY3gw0sbY8Mr5vk1m01b1ZX4Pqp6bblrqsT3rr7e1v6jTPAlY8k2pqRXFTXjGZTP9ov2iLXT4dD1GiUPDbAlfW/o05somaj2qclKLsgiox6oInm5unwo+/X4+H5tkk2A/KbJ5c0QV4/Hn4xnvzh6d2qHeNm08aNi6HJu3narxEyf4klTMajaeTmcFq3afVfjX9fdiE1dZqxdyWiRqNkYoANz/8OnTCbXj+eCoUScedzQamRD719/YNLug41Abs3xM//eONHzA6O6/Xmwx/8prZ8yNt5d/xgeom127QO2cd1/3g0BO1JYR2G2jZ6kuwMsM21v+NOuE1ND2/i2lGJqPPZgFh+DHfwsAfcJpxul91/5ZI33VmzKXj91FZym8z7pxNpjxfuHGCPJpFEO6Q2J63rjg22ij02XP+vFTMFo0bj9pNzwEOI6agTUVNR7ahE1PlsMGGQz/LuExfNX/1x30f2+i8/r44N8EN2Mog+FRsQS7QGbM07st8AOzzOgP+2WaZ01GjcvtPzx5kjA6JOJAb42nGJ0PlsQB3gcd59/caOQNMhf+xwfdutZuwBscTYHnD9d39couwBvQZEnRjeA8L5put89mghuySF/Z+bLkWDsvVHz6iHrtfbD749NSA5B/i3YidxfA7oqdv8Gcbg9BxgGz1pf4seAyLho6ZC7bhE6Hz2UIEyrhnYqwOzK9rrzKsvDu9Wbme4fnp3H58DTMmPnvb3vYeR46sg/1bsJI6vgvrM20aXQclVkG/0qP0mz2ifGhB14qipqHYoEXc+FxQY9CO+C9fK7QWyOQffIz0Jd1fSfYN4fB/QnQPCSThcb/cbEB9g+u4Dbo6S3Xm0x4DQieOmQu2oRNT5XDBvuHswd4j4wN4Mvvuq6Zm9LzSXMK+/3cRXNe295GeHnkG0N5e/fzy5CmolzKX+V63ywOHLHata7J3wZ0mjcfK5OXl++H3fVVDcieOmQu1QIu58JiCUrc56YF/+P/t3z1nAHUAvzf79kb/l6c1WA5bFX1sPHEzVgMV59+ntmX8rqgFKMcAdgHTAHYB0wB2AdMAdgHTAHYB0wB2AdMAdgHTAHYB0wB2AdMAdgHTAHYB0wB2AdMAdgHTAHYB0wB2AdMAdgHTAHYB0wB2AdMAdgHTAHYB0wB2AdMAdgHTAHYB0wB2AdMAdgHTAHYB0wB2AdMAdgHTAHYB0wB2AdMAdgHTAHYB0wB2AdMAdgHRQubkB6kZxSaByc//upXIUlwQqN6cGJKByc2pAAio3pwYkgFTaP7Jk8jxpNSAFlMIb/wSSLeW5gEfNqQEJIJTd33fDviE8kuioOTUgAYSyu1X3FKrtxIOQGpACQlndAxYAlMIb/yA2PQcUA6TS7ePRKA+lS5pTAxJQuTk1IAGVm1MDEkAou1uZI/9Wb8RKAkJZa8DGPZX5y/Hivc2pAQkglDUGtEOvl6GlAKGsMeD51hqQ3Ihlf7KiBqSAUDZjDxiTUwNSQCjr7gJuDv50PEFODUgBrXjjwdXDmRvhMTk1IAV15dSAFNSVUwNSQCptnsTvTsIDt2JjcmpACiiFN83xf7cyZ2E1oBQglHWfB+zvzWoeakAhQCjr/wGxvn5SA0oBQtnuE7H1jRpQClAK+2F360tNkVMDUkAq7T+T3N+rAYVAXTk1IAV15dSAFNSVUwNSUFdODUhBXTk1IAV15dSAFNSVGzJA7swx1JUbMkDufoG6cmpACurKqQEpqCunBqSgrpwakIK6cmpACurKqQEpqCunBqSgrpwakIK6cmpACurKqQEpqCunBqSgrpwakIK6cmpACurKqQEpKKMyd4qSGlBJTg1IQV05NSAFdeXUgBTUlVMDUlBXTg1IQV05NSAFPrFbTX0IU6/cUL4akICQNDPw5nqAsXw1IAFHf832AGP5akACkr83c54GpAbQQfzH1k4DttMgS8j15asBCehS5lEcbuSnPhT0oAbQgU/sVlcPBeWG8tWABNSVUwNSEJLr5gA0+Ymsp3L9+WpAArrU2p4A3KMgCsgN5KsBCfAJ/xyCGWfggxpABz7hn0Mw9BACotxQvhqQgC7lZsE/3+qdcFUQks+3zX3YzGtRjOWrAQmoK6cGpKCunBqQgi6Vs0LSaBkMbO/y1YAEdKn1+OXP+CpK6N8c8tWABPjE4MNwAxlryKB3a5SvBiTAJzKeSJ+xihJ6t0b5akACfGJ/P/o/CN0DFgBdaovRXWB8FSX0bw75akACfMIvkHT2Kmh0FSUMbO/y1YAE1JVTA1JQV04NSEFINseX66f1mYvRjFWUMLC9y1cDEtCltlcPzbXNuduBjFWU0L855KsBCfAJc425OfNY7sOia8ioAXZkzbCe+URswVWU1IBuD1gPfytL94AFQJdy54DNmduxBVdRUgMO7fiOfCK21CpKakAlOTUgBXXl1IAU+ETW/4Ly5Yby1YAEJH/P+16WGkAG6Yb18McC3U4yvJ+cyKX5akAC0g3ndoHBlUuG5dJ8NSAB6YazX00c/djsRC7NVwMSkPw98u3osY/NUrmTfDUgAT4x+mEXTW4oXw1IQF05NSAFdeXUgBT4RMY1JkVuKF8NSECXcufXc/8NJckN5KsBCfCJ/b0b+aH/9BPlhvLVgAT4xO5j949onSNWF/iE3wPOfCJGkRvKVwMS0KW29rOYzbw5ShjLVwMSEJL2OmjefZgaQAZ15dSAFNSVoxkgYX09hOToVxNpcv35JAMk7BfoUuNfTSTJDeSrAQnwiYyvJlLkDgPHDzUgAT6R8dVEitzAe10NSIFPZHw1kSKnBmSCLjX+1USSnBqQB0Iy56uJ+XJqQB5YSk4NyAM+EU0CLiGnBmQCn8iYKU+RUwMyQZea+aXEVE4NyAM+MevLuT3/qFED8sBScmpAHlhKTg3IA/a1zBn4oAbQgX21BpS4EEVIqQFZwL6qAWzAvqoBbMC+qgFswL6qAWzAvqoBbMC+lvlq9EENoIOl5NSAPLCUnBqQB5aSUwPywFJyakAeWEpODcgDS8mpAXlgKTk1IA8sJacG5IGl5JYz4GV9ax1LyS1nwIBE2Y5UA0vJqQF5YCk5NSAPLCWnBuSBpeTUgDywlJwakAeWklMD8gCpNGElvRduQLGbEVIVykp6L92AUkFQqpDWEVMDMoUIZUkr6akBmUKEsroHRB3lMIC0kp4akClEKk1YSU8NyBQqHFdIqQF5QmXCqTlFSa4BpJX01IBMIUJZ0kp6akCmEKEsaR0xNSBTiFB2eCW9HrnqBtT9pFj3gMzC9BHJg8kA857KXElPDcgUohXPX0nvQgxY6sB0YfcBPXIXYkD/1gIdLSVcIJZ+OTWAOmJFCHJqAHXEihDk1ADqiBUhyKkB1BErQpBTA6gjVoQgpwZQR6wIQU4NoI5YEYKcGkAdsSIEOTWAOmJFCHJqAHXEihDk1ADqiBUhyF20AST6O9ovPGfEihDkLtoAknB/RwllM0esCEFODaCOWBGCnBpAHbEiBDk1gDpiRQhyagB1xIoQ5NQA6ogVIci9HAP66S87Z8SKEORejgGUrXNGrAhBTg2gjlgRgpwaQB2xIgQ5NYA6Yjlc8jzhixBe2ICLnid8EcLLGnDZsyQvQnhZA4bnCfdNURLJsgZk7AEKFVAKj88TVqiAVHp0nrBCBdwBSAfcAUgH3AFIB9wBSAeLCb9wio1TKaFSwpXrVW5uQaFSwpXrVW5uQaFSwpXrVW5uQaFSwpXrVW5uQaFSwpXrVW5uQaFSwpXrVW5uQaFSwpXrVW5uQaFSwpXrVW5uQaFSwpXrVW5uQSFlGuAOQDrgDkA64A5AOuAOQDrgDkA64A5AOuAOQDrgDkA64A5AOuAOQDrgDkA64A5AOlhEdQvzhGMy4eHUJJ5/93ZKo64asU07R+huSnMDYL7EKVvzfOkJ0T3/dkqPdis7WYHaaFuN1ub+vmlhY/ya2scUzFY4xc0jWJPfyYOrEpyv5KasURttqxHbdMsnbF69ndzHFMxWOKWLklpxM6E/W9zZMSQ26qtNa/PqYXIfUzBXoAe3V094O6/f9wdYEs4AcqOu7JQ216/eTu5jCuYK9OAOjfQD5G5lJn6syQ7YYaA3aqtNadPMD5raxxMwV6CHecHR31VzDJjQ5tafgy/WgHm7Z7tMEIFZhyBym25+3EUfguadoOjXolNOwodjA/LbbCerX/RJeOolmuvUxEMQvdHIt/w2/UTRi74MnXyTYvsz8SRMb7S9CiK1+XzrS17yjZh5n0y7TV83l4TUM0D3/qU22lYjtblx02NMO1P7mID5EsocwB2AdMAdgHTAHYB0wB2AdMAdgHTAHYB0wB2AdMAdgHTAHYB0wB2AdMAdgHTAHYB0wB2AdMAdgHTAHYB0wB2AdMAdgHTAHYB0wB2AdMAdgHTAHYB0wB2AdMAdgHTAHYB0wB2AdMAdgHTAHcA4u9VLXrAG3AGMowYwowYwYw3oVlE0E3xdetPOcHe/7Spzzcvu46/x6p/m5a3NuTNbP1+5r6DHVexEo9tJ34cvCVhbz8IYsOm+ir9tBmy3akbRbPJZze/OADPt0c19NDlmRsVuZaa3tz++ismw02O2vA6As/E8miHrVpBrpwZtrx78gSn89gbctRtdzvbVW5toBvu4SpNRYI7dbMAdwDi71fthJrWb09W8+omN/ncw4Mv2DzeByA682+SLRhn8DoA7gHGaI8g33SxGN4hmNNtN/nePAe1yO8GAtmiX4Z59oueAEcwRY90c0+2Zk7wHRFnHe4BnXWKm13TA2XgexoBuJvWZc8Dd0fEmWn336PRwiDJ6/qoOOBvPw47b2h+tj66C9vc3/vf+/vqpOaJEBrhLp7Xxqt0UVzEZdlcoMdd0BuBsPI/2ksbPiR64D7CPvvo8PgS5nMa4sCmuYh8wgTJzTWcA1tYVNYAbcAcgHXAHIB1wByAdcAcgHXAHIB1wByAdcAcgHXAHIB1wByAdcAcgHXAHIB1wByAdcAcgHXAHIB1wByAdcAcgHXAHIB1wByAdcAcgHXAHIB1wByAdcAcgnV8BY4VwS7WuLroAAAAASUVORK5CYII=" /><!-- --></p>
 <div class="sourceCode" id="cb53"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb53-1"><a href="#cb53-1" tabindex="-1"></a><span class="fu">summary</span>(g1000d_sgko)</span>
 <span id="cb53-2"><a href="#cb53-2" tabindex="-1"></a><span class="co">#&gt;    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. </span></span>
-<span id="cb53-3"><a href="#cb53-3" tabindex="-1"></a><span class="co">#&gt;   1.000   4.000   5.000   7.186   9.000  22.000</span></span>
+<span id="cb53-3"><a href="#cb53-3" tabindex="-1"></a><span class="co">#&gt;   1.000   4.000   5.000   7.258   9.000  22.000</span></span>
 <span id="cb53-4"><a href="#cb53-4" tabindex="-1"></a><span class="fu">sum</span>(g1000d_sgko <span class="sc">==</span> <span class="dv">1</span>)</span>
 <span id="cb53-5"><a href="#cb53-5" tabindex="-1"></a><span class="co">#&gt; [1] 24</span></span></code></pre></div>
 <p>This is not <em>quite</em> as skewed as the neighbor graph, but there
@@ -965,7 +966,7 @@ using our original data as a query:</p>
 <span id="cb54-10"><a href="#cb54-10" tabindex="-1"></a>  )</span></code></pre></div>
 <p>Are the results improved?</p>
 <div class="sourceCode" id="cb55"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb55-1"><a href="#cb55-1" tabindex="-1"></a><span class="fu">neighbor_overlap</span>(g1000d_nnbf, g1000d_search, <span class="at">k =</span> <span class="dv">15</span>)</span>
-<span id="cb55-2"><a href="#cb55-2" tabindex="-1"></a><span class="co">#&gt; [1] 0.9978</span></span></code></pre></div>
+<span id="cb55-2"><a href="#cb55-2" tabindex="-1"></a><span class="co">#&gt; [1] 0.9979333</span></span></code></pre></div>
 <p>Yes, the accuracy is now nearly perfect. The disadvantages of the
 search graph approach for building a neighbor graph is that it is less
 efficient than NND: <code>graph_knn_query</code> must assume that the
@@ -1019,7 +1020,7 @@ graph without back-tracking gives slightly better accuracies:</p>
 <span id="cb58-9"><a href="#cb58-9" tabindex="-1"></a>    <span class="at">epsilon =</span> <span class="dv">0</span></span>
 <span id="cb58-10"><a href="#cb58-10" tabindex="-1"></a>  )</span>
 <span id="cb58-11"><a href="#cb58-11" tabindex="-1"></a><span class="fu">neighbor_overlap</span>(g1000d_nnbf, g1000d_search0, <span class="at">k =</span> <span class="dv">15</span>)</span>
-<span id="cb58-12"><a href="#cb58-12" tabindex="-1"></a><span class="co">#&gt; [1] 0.8467333</span></span></code></pre></div>
+<span id="cb58-12"><a href="#cb58-12" tabindex="-1"></a><span class="co">#&gt; [1] 0.8489333</span></span></code></pre></div>
 <p>but it seems like some sort of back-tracking is to be recommended
 with this approach. The downside is that you could be searching through
 a large proportion of the dataset, in which case you would save time by
@@ -1043,7 +1044,7 @@ controls the search termination. A similar parameter is used in <span class="cit
 <span id="cb59-10"><a href="#cb59-10" tabindex="-1"></a>    <span class="at">max_search_fraction =</span> <span class="fl">0.1</span></span>
 <span id="cb59-11"><a href="#cb59-11" tabindex="-1"></a>  )</span>
 <span id="cb59-12"><a href="#cb59-12" tabindex="-1"></a><span class="fu">neighbor_overlap</span>(g1000d_nnbf, g1000d_nnd_search_max, <span class="at">k =</span> <span class="dv">15</span>)</span>
-<span id="cb59-13"><a href="#cb59-13" tabindex="-1"></a><span class="co">#&gt; [1] 0.8228667</span></span></code></pre></div>
+<span id="cb59-13"><a href="#cb59-13" tabindex="-1"></a><span class="co">#&gt; [1] 0.8233333</span></span></code></pre></div>
 <p>Accuracies are again reduced.</p>
 </div>
 </div>
@@ -1101,13 +1102,13 @@ search when the results are probably already quite good.</p>
 <p>For more on the effect of hubness and nearest neighbors, and more
 advanced attempts to fix the problem, see the work of Flexer and
 co-workers <span class="citation">(Schnitzer et al. 2012; Flexer 2016;
-Feldbauer and Flexer 2019; Feldbauer, Rattei, and Flexer 2019)</span>
-and Radovanović and co-workers <span class="citation">(Radovanovic,
-Nanopoulos, and Ivanovic 2010; Bratić et al. 2019)</span>.</p>
+Feldbauer and Flexer 2019; Feldbauer et al. 2019)</span> and Radovanović
+and co-workers <span class="citation">(Radovanovic et al. 2010; Bratić
+et al. 2019)</span>.</p>
 </div>
 <div id="references" class="section level2 unnumbered">
 <h2 class="unnumbered">References</h2>
-<div id="refs" class="references csl-bib-body hanging-indent" entry-spacing="0">
+<div id="refs" class="references csl-bib-body hanging-indent">
 <div id="ref-bratic2019influence" class="csl-entry">
 Bratić, Brankica, Michael E Houle, Vladimir Kurbalija, Vincent Oria, and
 Miloš Radovanović. 2019. <span>“The Influence of Hubness on
@@ -1116,7 +1117,7 @@ Tools</em> 28 (06): 1960002.
 </div>
 <div id="ref-dong2011efficient" class="csl-entry">
 Dong, Wei, Charikar Moses, and Kai Li. 2011. <span>“Efficient k-Nearest
-Neighbor Graph Construction for Generic Similarity Measures.”</span> In
+Neighbor Graph Construction for Generic Similarity Measures.”</span>
 <em>Proceedings of the 20th International Conference on World Wide
 Web</em>, 577–86.
 </div>
@@ -1133,31 +1134,31 @@ Search.”</span> <em>arXiv Preprint arXiv:1912.00706</em>.
 </div>
 <div id="ref-flexer2016empirical" class="csl-entry">
 Flexer, Arthur. 2016. <span>“An Empirical Analysis of Hubness in
-Unsupervised Distance-Based Outlier Detection.”</span> In <em>2016 IEEE
+Unsupervised Distance-Based Outlier Detection.”</span> <em>2016 IEEE
 16th International Conference on Data Mining Workshops (ICDMW)</em>,
-716–23. IEEE.
+716–23.
 </div>
 <div id="ref-harwood2016fanng" class="csl-entry">
 Harwood, Ben, and Tom Drummond. 2016. <span>“Fanng: Fast Approximate
-Nearest Neighbour Graphs.”</span> In <em>Proceedings of the IEEE
-Conference on Computer Vision and Pattern Recognition</em>, 5713–22.
+Nearest Neighbour Graphs.”</span> <em>Proceedings of the IEEE Conference
+on Computer Vision and Pattern Recognition</em>, 5713–22.
 </div>
 <div id="ref-low2013hubness" class="csl-entry">
 Low, Thomas, Christian Borgelt, Sebastian Stober, and Andreas
 Nürnberger. 2013. <span>“The Hubness Phenomenon: Fact or
 Artifact?”</span> In <em>Towards Advanced Data Analysis by Combining
-Soft Computing and Statistics</em>, 267–78. Springer.
+Soft Computing and Statistics</em>. Springer.
 </div>
 <div id="ref-radovanovic2010hubs" class="csl-entry">
 Radovanovic, Milos, Alexandros Nanopoulos, and Mirjana Ivanovic. 2010.
 <span>“Hubs in Space: Popular Nearest Neighbors in High-Dimensional
 Data.”</span> <em>Journal of Machine Learning Research</em> 11 (sept):
-2487–2531.
+2487–531.
 </div>
 <div id="ref-schnitzer2012local" class="csl-entry">
 Schnitzer, Dominik, Arthur Flexer, Markus Schedl, and Gerhard Widmer.
 2012. <span>“Local and Global Scaling Reduce Hubs in Space.”</span>
-<em>The Journal of Machine Learning Research</em> 13 (1): 2871–2902.
+<em>The Journal of Machine Learning Research</em> 13 (1): 2871–902.
 </div>
 </div>
 </div>

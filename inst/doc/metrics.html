@@ -48,8 +48,9 @@ overflow: visible;
 }
 </style>
 <style type="text/css" data-origin="pandoc">
+html { -webkit-text-size-adjust: 100%; }
 pre > code.sourceCode { white-space: pre; position: relative; }
-pre > code.sourceCode > span { line-height: 1.25; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
 pre > code.sourceCode > span:empty { height: 1.2em; }
 .sourceCode { overflow: visible; }
 code.sourceCode > span { color: inherit; text-decoration: inherit; }
@@ -60,7 +61,7 @@ div.sourceCode { overflow: auto; }
 }
 @media print {
 pre > code.sourceCode { white-space: pre-wrap; }
-pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
 }
 pre.numberSource code
 { counter-reset: source-line 0; }
@@ -148,7 +149,6 @@ code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; }
 div.csl-bib-body { }
 div.csl-entry {
 clear: both;
-margin-bottom: 0em;
 }
 .hanging div.csl-entry {
 margin-left:2em;
@@ -374,8 +374,8 @@ or <code>&quot;jaccard&quot;</code> might be a good place to start.</p>
 <p>The metrics here are a subset of those offered by the <a href="https://github.com/lmcinnes/pynndescent/tree/master">PyNNDescent</a>
 Python package which in turn reproduces those in the <a href="https://docs.scipy.org/doc/scipy/reference/spatial.distance.html#module-scipy.spatial.distance">scipy.spatial.distance</a>
 module of <a href="https://scipy.org/">SciPy</a>. Many of the binary
-distances seem to have definitions shared with <span class="citation">(Choi et al. 2010)</span> so you may want to look in
-that reference for an exact definition.</p>
+distances seem to have definitions shared with <span class="citation">(<span class="nocase">Choi et al.</span> 2010)</span>
+so you may want to look in that reference for an exact definition.</p>
 <ul>
 <li><code>&quot;braycurtis&quot;</code>: <a href="https://en.wikipedia.org/wiki/Bray%E2%80%93Curtis_dissimilarity">Bray-Curtis</a>.</li>
 <li><code>&quot;canberra&quot;</code>: <a href="https://en.wikipedia.org/wiki/Canberra_distance">Canberra</a>.</li>
@@ -392,6 +392,13 @@ for binary data.</li>
 L2 norm.</li>
 <li><code>&quot;hamming&quot;</code>: the <a href="https://en.wikipedia.org/wiki/Hamming_distance">Hamming
 distance</a>. Intended for binary data.</li>
+<li><code>&quot;haversine&quot;</code>: the Haversine (great-circle) distance for
+2D latitude and longitude coordinates in <em>radians</em>. This is for
+compatibility with the PyNNDescent implementation, but be aware that
+functions like <code>distHaversine</code> in the <a href="https://CRAN.R-project.org/package=geosphere">geosphere</a>
+package expect latitude and longitude in <em>degrees</em>. An error will
+be raised if values that appear to be supplied in degrees are
+encountered.</li>
 <li><code>&quot;hellinger&quot;</code>: the <a href="https://en.wikipedia.org/wiki/Hellinger_distance">Hellinger
 distance</a>. This is intended to be used with a probability
 distribution, so ensure that each row of your input data contains
@@ -494,16 +501,17 @@ faster.</p>
 </div>
 <div id="references" class="section level2 unnumbered">
 <h2 class="unnumbered">References</h2>
-<div id="refs" class="references csl-bib-body hanging-indent" entry-spacing="0">
+<div id="refs" class="references csl-bib-body hanging-indent">
 <div id="ref-choi2010survey" class="csl-entry">
-Choi, Seung-Seok, Sung-Hyuk Cha, Charles C Tappert, et al. 2010.
-<span>“A Survey of Binary Similarity and Distance Measures.”</span>
-<em>Journal of Systemics, Cybernetics and Informatics</em> 8 (1): 43–48.
+<span class="nocase">Choi, Seung-Seok, Sung-Hyuk Cha, Charles C Tappert,
+et al.</span> 2010. <span>“A Survey of Binary Similarity and Distance
+Measures.”</span> <em>Journal of Systemics, Cybernetics and
+Informatics</em> 8 (1): 43–48.
 </div>
 <div id="ref-7474366" class="csl-entry">
 Heidarian, Arash, and Michael J. Dinneen. 2016. <span>“A Hybrid
 Geometric Approach for Measuring Similarity Level Among Documents and
-Document Clustering.”</span> In <em>2016 IEEE Second International
+Document Clustering.”</span> <em>2016 IEEE Second International
 Conference on Big Data Computing Service and Applications
 (BigDataService)</em>, 142–51. <a href="https://doi.org/10.1109/BigDataService.2016.14">https://doi.org/10.1109/BigDataService.2016.14</a>.
 </div>

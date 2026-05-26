@@ -36,6 +36,9 @@
 #'   - `"dice"`
 #'   - `"euclidean"`
 #'   - `"hamming"`
+#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
+#' *radians*; an error will be raised if values that appear to be supplied in
+#' degrees are encountered)
 #'   - `"hellinger"`
 #'   - `"jaccard"`
 #'   - `"jensenshannon"`
@@ -259,6 +262,9 @@ rnnd_build <- function(data,
                        verbose = FALSE,
                        progress = "bar",
                        obs = "R") {
+  obs <- match.arg(toupper(obs), c("C", "R"))
+  n_threads <- check_n_threads(n_threads)
+  n_search_trees <- check_count(n_search_trees, "n_search_trees")
   data <- x2m(data)
   if (obs == "R") {
     data <- Matrix::t(data)
@@ -419,6 +425,8 @@ rnnd_query <-
            n_threads = 0,
            verbose = FALSE,
            obs = "R") {
+    obs <- match.arg(toupper(obs), c("C", "R"))
+    n_threads <- check_n_threads(n_threads)
     if (is.null(init) && !is.null(index$search_forest)) {
       init <- index$search_forest
     }
@@ -478,6 +486,9 @@ rnnd_query <-
 #'   - `"dice"`
 #'   - `"euclidean"`
 #'   - `"hamming"`
+#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
+#' *radians*; an error will be raised if values that appear to be supplied in
+#' degrees are encountered)
 #'   - `"hellinger"`
 #'   - `"jaccard"`
 #'   - `"jensenshannon"`
@@ -657,6 +668,8 @@ rnnd_knn <- function(data,
                      verbose = FALSE,
                      progress = "bar",
                      obs = "R") {
+  obs <- match.arg(toupper(obs), c("C", "R"))
+  n_threads <- check_n_threads(n_threads)
   data <- x2m(data)
   if (obs == "R") {
     data <- Matrix::t(data)
@@ -720,6 +733,9 @@ rnnd_knn <- function(data,
 #'   - `"dice"`
 #'   - `"euclidean"`
 #'   - `"hamming"`
+#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
+#' *radians*; an error will be raised if values that appear to be supplied in
+#' degrees are encountered)
 #'   - `"hellinger"`
 #'   - `"jaccard"`
 #'   - `"jensenshannon"`
@@ -797,6 +813,7 @@ brute_force_knn <- function(data,
                             verbose = FALSE,
                             obs = "R") {
   obs <- match.arg(toupper(obs), c("C", "R"))
+  n_threads <- check_n_threads(n_threads)
   n_obs <- switch(obs,
     R = nrow,
     C = ncol,
@@ -884,6 +901,9 @@ brute_force_knn <- function(data,
 #'   - `"dice"`
 #'   - `"euclidean"`
 #'   - `"hamming"`
+#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
+#' *radians*; an error will be raised if values that appear to be supplied in
+#' degrees are encountered)
 #'   - `"hellinger"`
 #'   - `"jaccard"`
 #'   - `"jensenshannon"`
@@ -972,6 +992,7 @@ random_knn <-
            verbose = FALSE,
            obs = "R") {
     obs <- match.arg(toupper(obs), c("C", "R"))
+    n_threads <- check_n_threads(n_threads)
     n_obs <- switch(obs,
       R = nrow,
       C = ncol,
@@ -1032,6 +1053,9 @@ random_knn <-
 #'   - `"dice"`
 #'   - `"euclidean"`
 #'   - `"hamming"`
+#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
+#' *radians*; an error will be raised if values that appear to be supplied in
+#' degrees are encountered)
 #'   - `"hellinger"`
 #'   - `"jaccard"`
 #'   - `"jensenshannon"`
@@ -1230,8 +1254,12 @@ nnd_knn <- function(data,
                     progress = "bar",
                     obs = "R",
                     ret_forest = FALSE) {
-  stopifnot(tolower(progress) %in% c("bar", "dist"))
+  progress <- match.arg(tolower(progress), c("bar", "dist"))
   obs <- match.arg(toupper(obs), c("C", "R"))
+  n_threads <- check_n_threads(n_threads)
+  check_delta(delta)
+  n_iters <- check_optional_count(n_iters, "n_iters", min = 0L)
+  max_candidates <- check_optional_count(max_candidates, "max_candidates")
 
   actual_metric <-
     get_actual_metric(use_alt_metric, metric, data, verbose)
@@ -1436,6 +1464,9 @@ nnd_knn <- function(data,
 #'   - `"dice"`
 #'   - `"euclidean"`
 #'   - `"hamming"`
+#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
+#' *radians*; an error will be raised if values that appear to be supplied in
+#' degrees are encountered)
 #'   - `"hellinger"`
 #'   - `"jaccard"`
 #'   - `"jensenshannon"`
@@ -1522,12 +1553,14 @@ brute_force_knn_query <- function(query,
                                   verbose = FALSE,
                                   obs = "R") {
   obs <- match.arg(toupper(obs), c("C", "R"))
+  n_threads <- check_n_threads(n_threads)
 
   actual_metric <- get_actual_metric(use_alt_metric, metric, reference, verbose)
 
   check_sparse(reference, query)
   reference <- x2m(reference)
   query <- x2m(query)
+  check_matching_features(reference, query, obs)
   if (obs == "R") {
     reference <- Matrix::t(reference)
     query <- Matrix::t(query)
@@ -1618,6 +1651,9 @@ brute_force_knn_query <- function(query,
 #'   - `"dice"`
 #'   - `"euclidean"`
 #'   - `"hamming"`
+#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
+#' *radians*; an error will be raised if values that appear to be supplied in
+#' degrees are encountered)
 #'   - `"hellinger"`
 #'   - `"jaccard"`
 #'   - `"jensenshannon"`
@@ -1709,6 +1745,7 @@ random_knn_query <-
            verbose = FALSE,
            obs = "R") {
     obs <- match.arg(toupper(obs), c("C", "R"))
+    n_threads <- check_n_threads(n_threads)
     n_obs <- switch(obs,
       R = nrow,
       C = ncol,
@@ -1719,6 +1756,7 @@ random_knn_query <-
 
     reference <- x2m(reference)
     query <- x2m(query)
+    check_matching_features(reference, query, obs)
     check_k(k, n_obs(reference))
 
     actual_metric <-
@@ -1794,6 +1832,9 @@ random_knn_query <-
 #'   - `"dice"`
 #'   - `"euclidean"`
 #'   - `"hamming"`
+#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
+#' *radians*; an error will be raised if values that appear to be supplied in
+#' degrees are encountered)
 #'   - `"hellinger"`
 #'   - `"jaccard"`
 #'   - `"jensenshannon"`
@@ -1945,9 +1986,12 @@ graph_knn_query <- function(query,
                             verbose = FALSE,
                             obs = "R") {
   obs <- match.arg(toupper(obs), c("C", "R"))
+  n_threads <- check_n_threads(n_threads)
+  check_query_search_controls(epsilon, max_search_fraction)
   check_sparse(reference, query)
   reference <- x2m(reference)
   query <- x2m(query)
+  check_matching_features(reference, query, obs)
   if (obs == "R") {
     reference <- Matrix::t(reference)
     query <- Matrix::t(query)
@@ -1967,6 +2011,8 @@ graph_knn_query <- function(query,
     actual_metric <-
       get_actual_metric(use_alt_metric, metric, reference, verbose)
   }
+
+  reference_graph <- check_reference_graph_size(reference_graph, ncol(reference))
 
   # reference and query must be column-oriented at this point
   if (is.null(init)) {
@@ -2061,25 +2107,8 @@ graph_knn_query <- function(query,
     nrow(init$dist) == ncol(query)
   )
   if (is.list(reference_graph)) {
-    reference_dist <- reference_graph$dist
-    reference_idx <- reference_graph$idx
-    stopifnot(!is.null(reference), (
-      methods::is(reference, "matrix") ||
-        methods::is(reference, "sparseMatrix")
-    ))
-    stopifnot(
-      !is.null(reference_idx),
-      methods::is(reference_idx, "matrix"),
-      nrow(reference_idx) == ncol(reference)
-    )
-    stopifnot(
-      !is.null(reference_dist),
-      methods::is(reference_dist, "matrix"),
-      nrow(reference_dist) == ncol(reference)
-    )
     reference_graph_list <- graph_to_list(reference_graph)
   } else {
-    stopifnot(methods::is(reference_graph, "sparseMatrix"))
     reference_graph_list <- tcsparse_to_list(reference_graph)
   }
 
@@ -2210,6 +2239,9 @@ graph_knn_query <- function(query,
 #'   - `"dice"`
 #'   - `"euclidean"`
 #'   - `"hamming"`
+#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
+#' *radians*; an error will be raised if values that appear to be supplied in
+#' degrees are encountered)
 #'   - `"hellinger"`
 #'   - `"jaccard"`
 #'   - `"jensenshannon"`
@@ -2336,6 +2368,7 @@ prepare_search_graph <- function(data,
                                  verbose = FALSE,
                                  obs = "R") {
   obs <- match.arg(toupper(obs), c("C", "R"))
+  n_threads <- check_n_threads(n_threads)
 
   if (!is.null(pruning_degree_multiplier)) {
     stopifnot(pruning_degree_multiplier > 0)
@@ -2347,8 +2380,16 @@ prepare_search_graph <- function(data,
     )
   }
 
+  data <- x2m(data)
+
   actual_metric <-
     get_actual_metric(use_alt_metric, metric, data, verbose)
+
+  if (obs == "R") {
+    data <- Matrix::t(data)
+  }
+
+  graph <- check_square_graph(graph, ncol(data))
 
   if (is_sparse(graph)) {
     sp <- Matrix::t(graph)
@@ -2366,10 +2407,6 @@ prepare_search_graph <- function(data,
 
   sp <- preserve_zeros(sp)
 
-  data <- x2m(data)
-  if (obs == "R") {
-    data <- Matrix::t(data)
-  }
   if (!is.null(diversify_prob) && diversify_prob > 0) {
     tsmessage("Diversifying forward graph")
     fdiv <- diversify(
@@ -2391,20 +2428,20 @@ prepare_search_graph <- function(data,
     )
   }
   rsp <- reverse_knn_sp(fdiv)
-  if (!is.null(diversify_prob) && diversify_prob > 0) {
-    if (prune_reverse && !is.null(pruning_degree_multiplier) &&
-        !is.infinite(pruning_degree_multiplier)) {
-      max_degree <- max(round(n_nbrs * pruning_degree_multiplier), 1)
-      tsmessage("Degree pruning reverse graph to max degree: ", max_degree)
-      rsp <-
-        degree_prune(
-          rsp,
-          max_degree = max_degree,
-          verbose = verbose,
-          n_threads = n_threads
-        )
-    }
+  if (prune_reverse && !is.null(pruning_degree_multiplier) &&
+      !is.infinite(pruning_degree_multiplier)) {
+    max_degree <- max(round(n_nbrs * pruning_degree_multiplier), 1)
+    tsmessage("Degree pruning reverse graph to max degree: ", max_degree)
+    rsp <-
+      degree_prune(
+        rsp,
+        max_degree = max_degree,
+        verbose = verbose,
+        n_threads = n_threads
+      )
+  }
 
+  if (!is.null(diversify_prob) && diversify_prob > 0) {
     tsmessage("Diversifying reverse graph")
     rdiv <- diversify(
       data,
@@ -2633,10 +2670,11 @@ merge_knn <- function(graphs,
                       is_query = FALSE,
                       n_threads = 0,
                       verbose = FALSE) {
+  n_threads <- check_n_threads(n_threads)
   if (length(graphs) == 0) {
     return(list())
   }
-  validate_are_mergeablel(graphs)
+  validate_are_mergeablel(graphs, is_query = is_query)
 
   rnn_merge_nn_all(graphs,
     is_query,

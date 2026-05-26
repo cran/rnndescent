@@ -249,8 +249,166 @@ test_that("explicit zeros are preserved", {
     Matrix::t(prepare_search_graph(
       data = ui10,
       graph = ui10_bf0
-    ))
+  ))
   expect_true(sg_0[10, 3] > 0)
+})
+
+test_that("degree pruning keeps the max_degree closest edges", {
+  gl <- list(
+    row_ptr = c(0L, 4L, 4L, 4L, 4L),
+    col_idx = c(0L, 1L, 2L, 3L),
+    dist = c(3, 1, 2, 4)
+  )
+
+  expect_equal(
+    rnndescent:::rnn_degree_prune(gl, max_degree = 2L, n_threads = 0L)$dist,
+    c(0, 1, 2, 0)
+  )
+
+  graph <- Matrix::sparseMatrix(
+    p = gl$row_ptr,
+    j = gl$col_idx,
+    x = gl$dist,
+    dims = c(4, 4),
+    repr = "C",
+    index1 = FALSE
+  )
+
+  expect_equal(
+    as.matrix(rnndescent:::degree_prune(graph, max_degree = 2L)),
+    matrix(
+      c(0, 1, 2, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        0, 0, 0, 0),
+      nrow = 4,
+      byrow = TRUE
+    )
+  )
+})
+
+test_that("prepare_search_graph rejects malformed graphs before sparse conversion", {
+  ref <- matrix(c(0, 0, 1, 1, 2, 2), ncol = 2, byrow = TRUE)
+
+  expect_error(
+    prepare_search_graph(
+      data = ref,
+      graph = list(
+        idx = matrix(c(1L, 2L), nrow = 2),
+        dist = matrix(c(0, 1), nrow = 2)
+      ),
+      diversify_prob = NULL,
+      pruning_degree_multiplier = NULL
+    ),
+    "graph must describe 3 observations, but has 2"
+  )
+
+  expect_error(
+    prepare_search_graph(
+      data = ref,
+      graph = Matrix::sparseMatrix(
+        i = c(1L, 2L),
+        j = c(2L, 1L),
+        x = c(1, 1),
+        dims = c(2L, 2L)
+      ),
+      diversify_prob = NULL,
+      pruning_degree_multiplier = NULL
+    ),
+    "graph must have dimensions 3 x 3, but has 2 x 2"
+  )
+
+  expect_error(
+    prepare_search_graph(
+      data = ref,
+      graph = list(
+        idx = matrix(c(1L, 4L, 2L), nrow = 3),
+        dist = matrix(c(0, 1, 2), nrow = 3)
+      ),
+      diversify_prob = NULL,
+      pruning_degree_multiplier = NULL
+    ),
+    "graph indices must be between 1 and 3 or 0 for missing entries"
+  )
+
+  expect_error(
+    prepare_search_graph(
+      data = ref,
+      graph = list(
+        idx = matrix(c(1L, 2L, 0L), nrow = 3),
+        dist = matrix(c(0, 1, 0.5), nrow = 3)
+      ),
+      diversify_prob = NULL,
+      pruning_degree_multiplier = NULL
+    ),
+    "graph must use idx = 0 and dist = NA together for missing entries"
+  )
+})
+
+test_that("prepare_search_graph prunes reverse edges without diversification", {
+  data <- matrix(seq_len(10), ncol = 2)
+  graph <- list(
+    idx = matrix(c(
+      4L, 5L,
+      2L, 4L,
+      1L, 3L,
+      1L, 4L,
+      4L, 1L
+    ), nrow = 5, byrow = TRUE),
+    dist = matrix(c(
+      0.099, 0.913,
+      0.316, 0.294,
+      0.519, 0.459,
+      0.662, 0.332,
+      0.407, 0.651
+    ), nrow = 5, byrow = TRUE)
+  )
+  expected <- Matrix::sparseMatrix(
+    i = c(1L, 2L, 3L, 4L, 5L),
+    j = c(4L, 4L, 1L, 1L, 4L),
+    x = c(0.099, 0.294, 0.519, 0.662, 0.407),
+    dims = c(5L, 5L)
+  )
+
+  sg_prune_null <- Matrix::t(prepare_search_graph(
+    data = data,
+    graph = graph,
+    use_alt_metric = FALSE,
+    diversify_prob = NULL,
+    pruning_degree_multiplier = 0.5,
+    prune_reverse = TRUE
+  ))
+  sg_prune_zero <- Matrix::t(prepare_search_graph(
+    data = data,
+    graph = graph,
+    use_alt_metric = FALSE,
+    diversify_prob = 0,
+    pruning_degree_multiplier = 0.5,
+    prune_reverse = TRUE
+  ))
+  sg_no_prune <- Matrix::t(prepare_search_graph(
+    data = data,
+    graph = graph,
+    use_alt_metric = FALSE,
+    diversify_prob = NULL,
+    pruning_degree_multiplier = 0.5,
+    prune_reverse = FALSE
+  ))
+
+  expect_equal(sg_prune_null, expected)
+  expect_equal(sg_prune_zero, expected)
+  expect_false(isTRUE(all.equal(sg_no_prune, expected, tolerance = 1e-8)))
+})
+
+test_that("prepare_search_graph rejects invalid n_threads values", {
+  expect_error(
+    prepare_search_graph(
+      data = ui10,
+      graph = ui10_bf,
+      n_threads = 1.5
+    ),
+    "n_threads must be"
+  )
 })
 
 test_that("column orientation", {
@@ -313,7 +471,7 @@ test_that("sparse data prep same as dense", {
       use_alt_metric = FALSE
     )
 
-  expect_equal(sgsp_noalt, sgdz, tol = 1e-7)
+  expect_equal(sgsp_noalt, sgdz, tolerance = 1e-7)
 })
 
 test_that("prune twice with different prob", {

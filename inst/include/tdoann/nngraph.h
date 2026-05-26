@@ -28,7 +28,9 @@
 #define TDOANN_NNGRAPH_H
 
 #include <array>
+#include <limits>
 #include <mutex>
+#include <utility>
 #include <vector>
 
 #include "distancebase.h"
@@ -93,6 +95,11 @@ template <typename Out = float, typename Idx = uint32_t> struct NNGraph {
       : idx(idx), dist(dist), n_points(n_points),
         n_nbrs(idx.size() / n_points) {}
 
+  NNGraph(std::vector<Idx> &&idx, std::vector<Out> &&dist,
+          std::size_t n_points)
+      : idx(std::move(idx)), dist(std::move(dist)), n_points(n_points),
+        n_nbrs(this->idx.size() / n_points) {}
+
   NNGraph(std::size_t n_points, std::size_t n_nbrs)
       : idx(std::vector<Idx>(n_points * n_nbrs, npos())),
         dist(std::vector<Out>(n_points * n_nbrs,
@@ -119,6 +126,13 @@ auto heap_to_graph(const NbrHeap &heap)
   heap_to_graph(heap, nn_graph);
 
   return nn_graph;
+}
+
+template <typename Out, typename Idx, Out (*max_dist_func)()>
+auto heap_to_graph(NNHeap<Out, Idx, max_dist_func> &&heap)
+    -> NNGraph<Out, Idx> {
+  return NNGraph<Out, Idx>(std::move(heap.idx), std::move(heap.dist),
+                           heap.n_points);
 }
 
 struct HeapAddSymmetric {
@@ -290,8 +304,15 @@ template <typename Out, typename Idx>
 void idx_to_graph(const BaseDistance<Out, Idx> &distance,
                   const std::vector<Idx> &idx, std::vector<Out> &dist,
                   std::size_t n_nbrs, std::size_t begin, std::size_t end) {
+  constexpr auto npos = static_cast<Idx>(-1);
   for (auto i = begin, innbrs = i * n_nbrs; i < end; i++, innbrs += n_nbrs) {
     for (std::size_t j = 0, idx_ij = innbrs; j < n_nbrs; j++, idx_ij++) {
+      if (idx[idx_ij] == npos) {
+        // Preserve missing init-graph entries for the R boundary instead of
+        // dereferencing the sentinel as a real data index.
+        dist[idx_ij] = (std::numeric_limits<Out>::quiet_NaN)();
+        continue;
+      }
       dist[idx_ij] = distance.calculate(idx[idx_ij], i);
     }
   }

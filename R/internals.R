@@ -5,9 +5,152 @@
 }
 
 check_k <- function(k, max_k) {
-  if (k > max_k) {
-    stop("k must be <= ", max_k)
+  if (!is_single_finite_number(k) || k < 1 || k > max_k || k != floor(k)) {
+    stop("k must be a single integer between 1 and ", max_k)
   }
+}
+
+check_count <- function(x, name, min = 1L, max = NULL) {
+  if (!is_single_finite_number(x) || x < min || x != floor(x) ||
+      (!is.null(max) && x > max)) {
+    if (is.null(max)) {
+      stop(name, " must be a single integer >= ", min)
+    }
+    stop(name, " must be a single integer between ", min, " and ", max)
+  }
+
+  as.integer(x)
+}
+
+check_optional_count <- function(x, name, min = 1L, max = NULL) {
+  if (is.null(x)) {
+    return(NULL)
+  }
+
+  check_count(x, name, min = min, max = max)
+}
+
+check_n_threads <- function(n_threads) {
+  check_count(n_threads, "n_threads", min = 0L)
+}
+
+check_matching_features <- function(reference, query, obs) {
+  n_features <- switch(obs,
+    R = ncol,
+    C = nrow,
+    stop("Unknown obs type")
+  )
+  query_n_features <- n_features(query)
+  reference_n_features <- n_features(reference)
+  if (query_n_features != reference_n_features) {
+    stop(
+      "query and reference must have the same number of features, but query has ",
+      query_n_features,
+      " and reference has ",
+      reference_n_features
+    )
+  }
+}
+
+is_single_finite_number <- function(x) {
+  is.numeric(x) && length(x) == 1L && !is.na(x) && is.finite(x)
+}
+
+check_nonnegative_number <- function(x, name) {
+  if (!is_single_finite_number(x) || x < 0) {
+    stop(name, " must be a single finite number >= 0")
+  }
+}
+
+check_unit_interval <- function(x, name) {
+  if (!is_single_finite_number(x) || x < 0 || x > 1) {
+    stop(name, " must be a single finite number between 0 and 1")
+  }
+}
+
+check_query_search_controls <- function(epsilon, max_search_fraction) {
+  check_nonnegative_number(epsilon, "epsilon")
+  check_unit_interval(max_search_fraction, "max_search_fraction")
+}
+
+check_delta <- function(delta) {
+  check_unit_interval(delta, "delta")
+}
+
+check_square_graph <- function(graph,
+                               n_reference,
+                               graph_name = "graph",
+                               n_label = "observations") {
+  if (is.list(graph)) {
+    graph <- check_graph(graph)
+    graph_n_reference <- nrow(graph$idx)
+    if (graph_n_reference != n_reference) {
+      stop(
+        graph_name,
+        " must describe ",
+        n_reference,
+        " ",
+        n_label,
+        ", but has ",
+        graph_n_reference
+      )
+    }
+
+    if (anyNA(graph$idx)) {
+      stop(graph_name, " indices must not be NA; use 0 for missing entries")
+    }
+
+    missing_idx <- graph$idx == 0L
+    missing_dist <- is.na(graph$dist)
+    if (any(missing_idx != missing_dist)) {
+      stop(graph_name, " must use idx = 0 and dist = NA together for missing entries")
+    }
+
+    bad_idx <- !missing_idx & (graph$idx < 1L | graph$idx > n_reference)
+    if (any(bad_idx)) {
+      stop(
+        graph_name,
+        " indices must be between 1 and ",
+        n_reference,
+        " or 0 for missing entries"
+      )
+    }
+
+    return(graph)
+  }
+
+  if (methods::is(graph, "sparseMatrix")) {
+    graph_dim <- dim(graph)
+    if (graph_dim[1] != n_reference || graph_dim[2] != n_reference) {
+      stop(
+        graph_name,
+        " must have dimensions ",
+        n_reference,
+        " x ",
+        n_reference,
+        ", but has ",
+        graph_dim[1],
+        " x ",
+        graph_dim[2]
+      )
+    }
+    return(graph)
+  }
+
+  stop(
+    "'",
+    graph_name,
+    "' must be either a list with idx/dist matrices or a sparseMatrix"
+  )
+}
+
+check_reference_graph_size <- function(reference_graph, n_reference) {
+  check_square_graph(
+    reference_graph,
+    n_reference,
+    graph_name = "reference_graph",
+    n_label = "reference observations"
+  )
 }
 
 check_graph <- function(idx, dist = NULL, k = NULL) {
@@ -25,6 +168,41 @@ check_graph <- function(idx, dist = NULL, k = NULL) {
   }
   stopifnot(k > 0)
   list(idx = idx, dist = dist, k = k)
+}
+
+check_init_graph <- function(nn, n_points, n_reference) {
+  stopifnot(is.list(nn))
+  stopifnot(!is.null(nn$idx))
+  stopifnot(methods::is(nn$idx, "matrix"))
+
+  if (!is.null(nn$dist)) {
+    stopifnot(methods::is(nn$dist, "matrix"))
+    stopifnot(dim(nn$idx) == dim(nn$dist))
+  }
+
+  if (nrow(nn$idx) != n_points) {
+    stop(
+      "initial neighbor graph must have ",
+      n_points,
+      " rows, but has ",
+      nrow(nn$idx)
+    )
+  }
+
+  if (anyNA(nn$idx)) {
+    stop("initial neighbor graph indices must not be NA; use 0 for missing entries")
+  }
+
+  bad_idx <- nn$idx != 0 & (nn$idx < 1 | nn$idx > n_reference)
+  if (any(bad_idx)) {
+    stop(
+      "initial neighbor graph indices must be between 1 and ",
+      n_reference,
+      " or 0 for missing entries"
+    )
+  }
+
+  nn
 }
 
 # data and query must be column-oriented
@@ -45,6 +223,9 @@ prepare_init_graph <-
     if (is.matrix(nn)) {
       nn <- list(idx = nn)
     }
+    n_reference <- ncol(data)
+    n_points <- if (is.null(query)) n_reference else ncol(query)
+    nn <- check_init_graph(nn, n_points, n_reference)
     ## nn is a list dist may be NULL
 
     # idx has too few or too many columns
@@ -205,23 +386,28 @@ is_sparse <- function(x) {
   methods::is(x, "sparseMatrix")
 }
 
-validate_are_mergeablel <- function(nn_graphs) {
+validate_are_mergeablel <- function(nn_graphs, is_query = FALSE) {
   nn_graph1 <- nn_graphs[[1]]
-  validate_nn_graph(nn_graph1)
+  validate_nn_graph(nn_graph1, is_query = is_query)
   n_graphs <- length(nn_graphs)
   if (n_graphs > 1) {
     for (i in 2:n_graphs) {
-      validate_are_mergeable(nn_graph1, nn_graphs[[i]], validate1 = FALSE)
+      validate_are_mergeable(
+        nn_graph1,
+        nn_graphs[[i]],
+        validate1 = FALSE,
+        is_query = is_query
+      )
     }
   }
 }
 
 validate_are_mergeable <-
-  function(nn_graph1, nn_graph2, validate1 = TRUE) {
+  function(nn_graph1, nn_graph2, validate1 = TRUE, is_query = FALSE) {
     if (validate1) {
-      validate_nn_graph(nn_graph1)
+      validate_nn_graph(nn_graph1, is_query = is_query)
     }
-    validate_nn_graph(nn_graph2)
+    validate_nn_graph(nn_graph2, is_query = is_query)
     nr1 <- nrow(nn_graph1$idx)
     nr2 <- nrow(nn_graph2$idx)
     if (nr1 != nr2) {
@@ -229,7 +415,7 @@ validate_are_mergeable <-
     }
   }
 
-validate_nn_graph <- function(nn_graph) {
+validate_nn_graph <- function(nn_graph, is_query = FALSE) {
   if (is.null(nn_graph$idx)) {
     stop("NN graph must contain 'idx' matrix")
   }
@@ -239,6 +425,28 @@ validate_nn_graph <- function(nn_graph) {
   nr <- nrow(nn_graph$idx)
   nc <- ncol(nn_graph$idx)
   validate_nn_graph_matrix(nn_graph$dist, nr, nc, msg = "nn matrix")
+
+  if (anyNA(nn_graph$idx)) {
+    stop("NN graph indices must not be NA; use 0 for missing entries")
+  }
+
+  missing_idx <- nn_graph$idx == 0L
+  missing_dist <- is.na(nn_graph$dist)
+  if (any(missing_idx != missing_dist)) {
+    stop("NN graph must use idx = 0 and dist = NA together for missing entries")
+  }
+
+  if (is_query) {
+    bad_idx <- !missing_idx & nn_graph$idx < 1L
+    if (any(bad_idx)) {
+      stop("Query NN graph indices must be >= 1 or 0 for missing entries")
+    }
+  } else {
+    bad_idx <- !missing_idx & (nn_graph$idx < 1L | nn_graph$idx > nr)
+    if (any(bad_idx)) {
+      stop("NN graph indices must be between 1 and ", nr, " or 0 for missing entries")
+    }
+  }
 }
 
 validate_nn_graph_matrix <- function(nn, nr, nc, msg = "matrix") {
@@ -276,6 +484,9 @@ rpf_knn_impl <-
     if (is.null(leaf_size)) {
       leaf_size <- max(10, k)
     }
+    n_trees <- check_count(n_trees, "n_trees")
+    leaf_size <- check_count(leaf_size, "leaf_size")
+    max_tree_depth <- check_count(max_tree_depth, "max_tree_depth", min = 0L)
 
     margin <- find_margin_method(margin, metric, data)
 
@@ -397,6 +608,95 @@ set_forest_data <- function(forest, use_alt_metric, metric, is_sparse) {
 
 is_rpforest <- function(forest) {
   !is.null(forest$type) && forest$type == "rnndescent:rpforest"
+}
+
+check_rpforest_matches_reference <- function(forest,
+                                             n_reference,
+                                             n_features = NULL) {
+  if (is.null(forest$trees) || !is.list(forest$trees) ||
+      length(forest$trees) < 1) {
+    stop("Bad forest format: no trees")
+  }
+
+  tree_n_items <- vapply(forest$trees, function(tree) {
+    length(tree$indices)
+  }, integer(1))
+  bad_tree <- which(tree_n_items != n_reference)
+  if (length(bad_tree) > 0) {
+    stop(
+      "forest must describe ",
+      n_reference,
+      " reference observations, but tree ",
+      bad_tree[1],
+      " has ",
+      tree_n_items[bad_tree[1]]
+    )
+  }
+
+  if (!is.null(n_features) && identical(forest$margin, "explicit") &&
+      !isTRUE(forest$sparse)) {
+    tree_n_features <- vapply(forest$trees, function(tree) {
+      if (is.null(tree$hyperplanes)) {
+        return(NA_integer_)
+      }
+      ncol(tree$hyperplanes)
+    }, integer(1))
+
+    missing_hyperplanes <- which(is.na(tree_n_features))
+    if (length(missing_hyperplanes) > 0) {
+      stop(
+        "Bad forest format: explicit forest tree ",
+        missing_hyperplanes[1],
+        " has no hyperplanes"
+      )
+    }
+
+    bad_feature_tree <- which(tree_n_features != n_features)
+    if (length(bad_feature_tree) > 0) {
+      stop(
+        "forest must describe ",
+        n_features,
+        " features, but tree ",
+        bad_feature_tree[1],
+        " has ",
+        tree_n_features[bad_feature_tree[1]]
+      )
+    }
+  }
+
+  if (!is.null(n_features) && identical(forest$margin, "explicit") &&
+      isTRUE(forest$sparse)) {
+    tree_n_features <- vapply(forest$trees, function(tree) {
+      if (is.null(tree$hyperplanes_ind)) {
+        return(NA_integer_)
+      }
+      if (length(tree$hyperplanes_ind) == 0L) {
+        return(0L)
+      }
+      max(tree$hyperplanes_ind) + 1L
+    }, integer(1))
+
+    missing_hyperplanes <- which(is.na(tree_n_features))
+    if (length(missing_hyperplanes) > 0) {
+      stop(
+        "Bad forest format: explicit sparse forest tree ",
+        missing_hyperplanes[1],
+        " has no hyperplanes_ind"
+      )
+    }
+
+    bad_feature_tree <- which(tree_n_features > n_features)
+    if (length(bad_feature_tree) > 0) {
+      stop(
+        "forest must describe no more than ",
+        n_features,
+        " features, but tree ",
+        bad_feature_tree[1],
+        " uses feature ",
+        tree_n_features[bad_feature_tree[1]]
+      )
+    }
+  }
 }
 
 # reference and query are column-oriented

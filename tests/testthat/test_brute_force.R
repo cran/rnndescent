@@ -2,17 +2,20 @@ library(rnndescent)
 context("Brute force construction")
 
 rnbrs <- brute_force_knn(ui10, k = 4, n_threads = 0)
-check_nbrs(rnbrs, ui10_eucd, tol = 1e-6)
+check_nbrs(rnbrs, ui10_eucd, tolerance = 1e-6)
 
 rnbrs <- brute_force_knn(ui10, k = 4, n_threads = 1)
-check_nbrs(rnbrs, ui10_eucd, tol = 1e-6)
+check_nbrs(rnbrs, ui10_eucd, tolerance = 1e-6)
+expect_equal(rnbrs, brute_force_knn(ui10, k = 4, n_threads = 0))
 
 # turn off alt metric
 rnbrs <- brute_force_knn(ui10, k = 4, n_threads = 1, use_alt_metric = FALSE)
-check_nbrs(rnbrs, ui10_eucd, tol = 1e-6)
+check_nbrs(rnbrs, ui10_eucd, tolerance = 1e-6)
 
 # Error
 expect_error(brute_force_knn(ui10, k = 11), "k must be")
+expect_error(brute_force_knn(ui10, k = 0), "k must be")
+expect_error(brute_force_knn(ui10, k = 1.5), "k must be")
 expect_error(brute_force_knn(ui10, k = 4, metric = "not-a-real metric"), "metric")
 
 # Queries -----------------------------------------------------------------
@@ -20,54 +23,80 @@ expect_error(brute_force_knn(ui10, k = 4, metric = "not-a-real metric"), "metric
 context("Brute force queries")
 
 qnbrs4 <- brute_force_knn_query(reference = ui6, query = ui4, k = 4)
-check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 4, expected_dist = ui10_eucd, tol = 1e-6)
-expect_equal(sum(qnbrs4$dist), ui4q_edsum, tol = 1e-5)
+check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 4, expected_dist = ui10_eucd, tolerance = 1e-6)
+expect_equal(sum(qnbrs4$dist), ui4q_edsum, tolerance = 1e-5)
 
 qnbrs6 <- brute_force_knn_query(reference = ui4, query = ui6, k = 4)
-check_query_nbrs(nn = qnbrs6, query = ui6, ref_range = 7:10, query_range = 1:6, k = 4, expected_dist = ui10_eucd, tol = 1e-6)
-expect_equal(sum(qnbrs6$dist), ui6q_edsum, tol = 1e-5)
+check_query_nbrs(nn = qnbrs6, query = ui6, ref_range = 7:10, query_range = 1:6, k = 4, expected_dist = ui10_eucd, tolerance = 1e-6)
+expect_equal(sum(qnbrs6$dist), ui6q_edsum, tolerance = 1e-5)
 
 # turn off alt metric
 qnbrs6 <- brute_force_knn_query(reference = ui4, query = ui6, k = 4, use_alt_metric = FALSE)
-check_query_nbrs(nn = qnbrs6, query = ui6, ref_range = 7:10, query_range = 1:6, k = 4, expected_dist = ui10_eucd, tol = 1e-6)
-expect_equal(sum(qnbrs6$dist), ui6q_edsum, tol = 1e-5)
+check_query_nbrs(nn = qnbrs6, query = ui6, ref_range = 7:10, query_range = 1:6, k = 4, expected_dist = ui10_eucd, tolerance = 1e-6)
+expect_equal(sum(qnbrs6$dist), ui6q_edsum, tolerance = 1e-5)
 
 # Errors
 
 expect_error(brute_force_knn_query(reference = ui4, query = ui6, k = 7), "k must be")
+expect_error(brute_force_knn_query(reference = ui4, query = ui6, k = 0), "k must be")
 expect_error(brute_force_knn_query(reference = ui4, query = ui6, k = 4, metric = "not-a-real metric"), "metric")
+expect_error(
+  brute_force_knn_query(
+    reference = matrix(0, nrow = 2, ncol = 2),
+    query = matrix(0, nrow = 2, ncol = 3),
+    k = 1
+  ),
+  "same number of features"
+)
+expect_error(
+  brute_force_knn_query(
+    reference = matrix(0, nrow = 2, ncol = 2),
+    query = matrix(0, nrow = 3, ncol = 2),
+    k = 1,
+    obs = "C"
+  ),
+  "same number of features"
+)
+
+test_that("brute force APIs reject invalid n_threads values", {
+  expect_error(brute_force_knn(ui10, k = 4, n_threads = -1), "n_threads must be")
+  expect_error(
+    brute_force_knn_query(reference = ui4, query = ui6, k = 4, n_threads = 1.5),
+    "n_threads must be"
+  )
+})
 
 # threads
 
 qnbrs4 <- brute_force_knn_query(reference = ui6, query = ui4, k = 4, n_threads = 1)
-check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 4, expected_dist = ui10_eucd, tol = 1e-6)
-expect_equal(sum(qnbrs4$dist), ui4q_edsum, tol = 1e-5)
+check_query_nbrs(nn = qnbrs4, query = ui4, ref_range = 1:6, query_range = 7:10, k = 4, expected_dist = ui10_eucd, tolerance = 1e-6)
+expect_equal(sum(qnbrs4$dist), ui4q_edsum, tolerance = 1e-5)
 
 qnbrs6 <- brute_force_knn_query(reference = ui4, query = ui6, k = 4, n_threads = 1)
-check_query_nbrs(nn = qnbrs6, query = ui6, ref_range = 7:10, query_range = 1:6, k = 4, expected_dist = ui10_eucd, tol = 1e-6)
-expect_equal(sum(qnbrs6$dist), ui6q_edsum, tol = 1e-5)
+check_query_nbrs(nn = qnbrs6, query = ui6, ref_range = 7:10, query_range = 1:6, k = 4, expected_dist = ui10_eucd, tolerance = 1e-6)
+expect_equal(sum(qnbrs6$dist), ui6q_edsum, tolerance = 1e-5)
 
 # other metrics
 
 ui6_nnd <- brute_force_knn(ui6, k = 4, metric = "cosine")
 qnbrs4 <- brute_force_knn_query(reference = ui6, query = ui4, k = 4, metric = "cosine")
 check_query_nbrs_idx(qnbrs4$idx, nref = nrow(ui6))
-expect_equal(sum(qnbrs4$dist), ui4q_cdsum, tol = 1e-5)
+expect_equal(sum(qnbrs4$dist), ui4q_cdsum, tolerance = 1e-5)
 
 ui4_nnd <- brute_force_knn(ui4, k = 4, metric = "cosine")
 qnbrs6 <- brute_force_knn_query(reference = ui4, query = ui6, k = 4, metric = "cosine")
 check_query_nbrs_idx(qnbrs6$idx, nref = nrow(ui4))
-expect_equal(sum(qnbrs6$dist), ui6q_cdsum, tol = 1e-5)
+expect_equal(sum(qnbrs6$dist), ui6q_cdsum, tolerance = 1e-5)
 
 ui6_nnd <- brute_force_knn(ui6, k = 4, metric = "manhattan")
 qnbrs4 <- brute_force_knn_query(reference = ui6, query = ui4, k = 4, metric = "manhattan")
 check_query_nbrs_idx(qnbrs4$idx, nref = nrow(ui6))
-expect_equal(sum(qnbrs4$dist), ui4q_mdsum, tol = 1e-5)
+expect_equal(sum(qnbrs4$dist), ui4q_mdsum, tolerance = 1e-5)
 
 ui4_nnd <- brute_force_knn(ui4, k = 4, metric = "manhattan")
 qnbrs6 <- brute_force_knn_query(reference = ui4, query = ui6, k = 4, metric = "manhattan")
 check_query_nbrs_idx(qnbrs6$idx, nref = nrow(ui4))
-expect_equal(sum(qnbrs6$dist), ui6q_mdsum, tol = 1e-5)
+expect_equal(sum(qnbrs6$dist), ui6q_mdsum, tolerance = 1e-5)
 
 ui6_nnd <- brute_force_knn(bit6, k = 4, metric = "hamming")
 qnbrs4 <- brute_force_knn_query(reference = bit6, query = bit4, k = 4, metric = "hamming")
@@ -90,7 +119,7 @@ check_query_nbrs_idx(qnbrs6$idx, nref = nrow(bit4))
 expect_equal(sum(qnbrs6$dist), bit6q_hdsum)
 
 ui6_nnd <- brute_force_knn(int6, k = 6, metric = "hamming")
-check_nbrs(ui6_nnd, int6hd, tol = 1e-6, check_idx_order = FALSE, check_dist_order = TRUE)
+check_nbrs(ui6_nnd, int6hd, tolerance = 1e-6, check_idx_order = FALSE, check_dist_order = TRUE)
 
 # normalize by nfeatures
 h46d <- matrix(
@@ -125,7 +154,7 @@ expect_equal(qnbrs6$dist, h64d)
 # orientation
 
 rnbrs <- brute_force_knn(t(ui10), k = 4, n_threads = 2, obs = "C")
-check_nbrs(rnbrs, ui10_eucd, tol = 1e-6)
+check_nbrs(rnbrs, ui10_eucd, tolerance = 1e-6)
 
 qnbrs6 <- brute_force_knn_query(t(int6), t(int4), k = 4, metric = "hamming", n_threads = 2, obs = "C")
 check_query_nbrs_idx(qnbrs6$idx, nref = nrow(int6))
@@ -133,7 +162,7 @@ expect_equal(qnbrs6$dist, h64d)
 
 # sparse
 rnbrs <- brute_force_knn(ui10sp_full, k = 4, n_threads = 0)
-check_nbrs(rnbrs, ui10_eucd, tol = 1e-6)
+check_nbrs(rnbrs, ui10_eucd, tolerance = 1e-6)
 
 nbrs_zdense <- brute_force_knn(ui10z, k = 4, n_threads = 0)
 nbrs_zsparse <- brute_force_knn(ui10sp, k = 4, n_threads = 0)
@@ -201,7 +230,7 @@ expect_equal(
     metric = "cosine",
     use_alt_metric = FALSE
   ),
-  tol = 1e-6
+  tolerance = 1e-6
 )
 
 expect_equal(
@@ -218,7 +247,7 @@ expect_equal(
     metric = "cosine",
     use_alt_metric = TRUE
   ),
-  tol = 1e-6
+  tolerance = 1e-6
 )
 
 expect_equal(
@@ -234,10 +263,49 @@ expect_equal(
     n_threads = 0,
     metric = "correlation"
   ),
-  tol = 1e-5
+  tolerance = 1e-5
 )
 
 # sparse queries
 expect_equal(brute_force_knn_query(ui10sp, ui10sp, k = 4), brute_force_knn(ui10sp, k = 4))
-expect_equal(brute_force_knn_query(ui10sp6, ui10sp4, k = 4), brute_force_knn_query(ui10z6, ui10z4, k = 4), tol = 1e-6)
-expect_equal(brute_force_knn_query(ui10sp4, ui10sp6, k = 4), brute_force_knn_query(ui10z4, ui10z6, k = 4), tol = 1e-6)
+expect_equal(brute_force_knn_query(ui10sp6, ui10sp4, k = 4), brute_force_knn_query(ui10z6, ui10z4, k = 4), tolerance = 1e-6)
+expect_equal(brute_force_knn_query(ui10sp4, ui10sp6, k = 4), brute_force_knn_query(ui10z4, ui10z6, k = 4), tolerance = 1e-6)
+
+test_that("brute force APIs normalize non-dgC sparse inputs", {
+  ref_r <- methods::as(ui10sp, "RsparseMatrix")
+  query_r <- methods::as(ui10sp4, "RsparseMatrix")
+  query_ref_r <- methods::as(ui10sp6, "RsparseMatrix")
+
+  expect_equal(
+    brute_force_knn(ref_r, k = 4, n_threads = 0),
+    brute_force_knn(ui10sp, k = 4, n_threads = 0)
+  )
+  expect_equal(
+    brute_force_knn_query(query_r, query_ref_r, k = 4),
+    brute_force_knn_query(ui10sp4, ui10sp6, k = 4),
+    tolerance = 1e-6
+  )
+})
+
+test_that("brute force APIs reject unsupported sparse classes", {
+  sparse_structured <- Matrix::forceSymmetric(
+    Matrix::Matrix(c(1, 0, 0, 3), nrow = 2, sparse = TRUE),
+    uplo = "U"
+  )
+  sparse_pattern <- methods::as(
+    Matrix::Matrix(
+      matrix(c(TRUE, FALSE, TRUE, FALSE, TRUE, FALSE), nrow = 3),
+      sparse = TRUE
+    ),
+    "nsparseMatrix"
+  )
+
+  expect_error(
+    brute_force_knn(sparse_structured, k = 1),
+    "Sparse matrices must be general numeric sparse matrices"
+  )
+  expect_error(
+    brute_force_knn(sparse_pattern, k = 1),
+    "Sparse matrices must be general numeric sparse matrices"
+  )
+})
