@@ -6,11 +6,13 @@ stime <- function() {
 # appears only if called from an environment where a logical verbose = TRUE
 # OR force = TRUE
 tsmessage <-
-  function(...,
-           domain = NULL,
-           appendLF = TRUE,
-           force = FALSE,
-           time_stamp = TRUE) {
+  function(
+    ...,
+    domain = NULL,
+    appendLF = TRUE,
+    force = FALSE,
+    time_stamp = TRUE
+  ) {
     verbose <- get0("verbose", envir = sys.parent())
 
     if (force || (!is.null(verbose) && verbose)) {
@@ -28,9 +30,15 @@ normalize_sparse_input <- function(X) {
   if (methods::is(X, "dgCMatrix")) {
     return(X)
   }
-  if (!any(vapply(c("dgRMatrix", "dgTMatrix"), function(class_name) {
-    methods::is(X, class_name)
-  }, logical(1)))) {
+  if (
+    !any(vapply(
+      c("dgRMatrix", "dgTMatrix"),
+      function(class_name) {
+        methods::is(X, class_name)
+      },
+      logical(1)
+    ))
+  ) {
     stop(
       "Sparse matrices must be general numeric sparse matrices ",
       "(dgCMatrix, dgRMatrix, or dgTMatrix)"
@@ -40,14 +48,30 @@ normalize_sparse_input <- function(X) {
 }
 
 # convert data frame to matrix using numeric columns
-x2m <- function(X) {
+x2m <- function(X, obs = "R", name = "data") {
   if (is_sparse(X)) {
-    return(normalize_sparse_input(X))
-  }
-  if (!methods::is(X, "matrix")) {
+    # Feature zeros are numerical; graph zeros are handled separately.
+    m <- Matrix::drop0(normalize_sparse_input(X))
+  } else if (!methods::is(X, "matrix")) {
     m <- as.matrix(X[, which(vapply(X, is.numeric, logical(1)))])
   } else {
     m <- X
+  }
+  n_features <- switch(obs, R = ncol(m), C = nrow(m), stop("Unknown obs type"))
+  if (n_features == 0L) {
+    stop(name, " must contain at least one feature after conversion")
+  }
+  finite <- if (is_sparse(m)) {
+    all(is.finite(m@x))
+  } else if (is.double(m) && is.matrix(m) && !is.object(m)) {
+    rnn_all_finite(m)
+  } else {
+    !is.numeric(m) ||
+      length(m) == 0L ||
+      (is.finite(min(m)) && is.finite(max(m)))
+  }
+  if (!finite) {
+    stop(name, " must contain only finite numeric feature values")
   }
   m
 }

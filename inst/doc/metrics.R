@@ -7,6 +7,14 @@ knitr::opts_chunk$set(
 ## ----setup--------------------------------------------------------------------
 library(rnndescent)
 
+## ----numerical precision------------------------------------------------------
+query <- matrix(1e8)
+reference <- matrix(1e8 + 1)
+c(
+  R = abs(reference - query),
+  rnndescent = brute_force_knn_query(query, reference, k = 1)$dist
+)
+
 ## ----binary data--------------------------------------------------------------
 set.seed(42)
 binary_data <- matrix(sample(c(0, 1), 100, replace = TRUE), ncol = 10)

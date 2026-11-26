@@ -1,18 +1,26 @@
 # Internals ---------------------------------------------------------------
 
 .onUnload <- function(libpath) {
+  rnn_release_prepared_indexes()
   library.dynam.unload("rnndescent", libpath)
 }
 
-check_k <- function(k, max_k) {
+check_k <- function(k, max_k, name = "data") {
   if (!is_single_finite_number(k) || k < 1 || k > max_k || k != floor(k)) {
+    if (isTRUE(max_k == 0)) {
+      stop(name, " must contain at least one observation")
+    }
     stop("k must be a single integer between 1 and ", max_k)
   }
 }
 
 check_count <- function(x, name, min = 1L, max = NULL) {
-  if (!is_single_finite_number(x) || x < min || x != floor(x) ||
-      (!is.null(max) && x > max)) {
+  if (
+    !is_single_finite_number(x) ||
+      x < min ||
+      x != floor(x) ||
+      (!is.null(max) && x > max)
+  ) {
     if (is.null(max)) {
       stop(name, " must be a single integer >= ", min)
     }
@@ -31,15 +39,11 @@ check_optional_count <- function(x, name, min = 1L, max = NULL) {
 }
 
 check_n_threads <- function(n_threads) {
-  check_count(n_threads, "n_threads", min = 0L)
+  check_count(n_threads, "n_threads", min = 0L, max = .Machine$integer.max)
 }
 
 check_matching_features <- function(reference, query, obs) {
-  n_features <- switch(obs,
-    R = ncol,
-    C = nrow,
-    stop("Unknown obs type")
-  )
+  n_features <- switch(obs, R = ncol, C = nrow, stop("Unknown obs type"))
   query_n_features <- n_features(query)
   reference_n_features <- n_features(reference)
   if (query_n_features != reference_n_features) {
@@ -77,10 +81,12 @@ check_delta <- function(delta) {
   check_unit_interval(delta, "delta")
 }
 
-check_square_graph <- function(graph,
-                               n_reference,
-                               graph_name = "graph",
-                               n_label = "observations") {
+check_square_graph <- function(
+  graph,
+  n_reference,
+  graph_name = "graph",
+  n_label = "observations"
+) {
   if (is.list(graph)) {
     graph <- check_graph(graph)
     graph_n_reference <- nrow(graph$idx)
@@ -96,26 +102,7 @@ check_square_graph <- function(graph,
       )
     }
 
-    if (anyNA(graph$idx)) {
-      stop(graph_name, " indices must not be NA; use 0 for missing entries")
-    }
-
-    missing_idx <- graph$idx == 0L
-    missing_dist <- is.na(graph$dist)
-    if (any(missing_idx != missing_dist)) {
-      stop(graph_name, " must use idx = 0 and dist = NA together for missing entries")
-    }
-
-    bad_idx <- !missing_idx & (graph$idx < 1L | graph$idx > n_reference)
-    if (any(bad_idx)) {
-      stop(
-        graph_name,
-        " indices must be between 1 and ",
-        n_reference,
-        " or 0 for missing entries"
-      )
-    }
-
+    check_graph_entries(graph, n_reference, graph_name)
     return(graph)
   }
 
@@ -160,24 +147,63 @@ check_graph <- function(idx, dist = NULL, k = NULL) {
   if (is.list(idx)) {
     idx <- idx$idx
   }
-  stopifnot(methods::is(idx, "matrix"))
-  stopifnot(methods::is(dist, "matrix"))
-  stopifnot(dim(idx) == dim(dist))
+  check_graph_matrices(idx, dist)
   if (is.null(k)) {
     k <- ncol(idx)
   }
-  stopifnot(k > 0)
+  valid_k <- k > 0
+  if (!(is.logical(valid_k) && !anyNA(valid_k) && all(valid_k))) {
+    stop("'k' must be greater than 0")
+  }
   list(idx = idx, dist = dist, k = k)
 }
 
+check_graph_matrices <- function(idx, dist) {
+  if (!methods::is(idx, "matrix")) {
+    stop("Expected a matrix of neighbor indices in 'idx'")
+  }
+  if (!methods::is(dist, "matrix")) {
+    stop("Expected a matrix of neighbor distances in 'dist'")
+  }
+  if (!identical(dim(idx), dim(dist))) {
+    stop("'idx' and 'dist' must have the same dimensions")
+  }
+}
+
+# Existing callers check NA, missing entries and reference bounds first.
+check_graph_indices <- function(idx, graph_name) {
+  if (
+    !is.integer(idx) &&
+      !all(is.finite(idx) & idx == floor(idx) & idx <= .Machine$integer.max)
+  ) {
+    stop(
+      graph_name,
+      " indices must be finite whole numbers no greater than ",
+      .Machine$integer.max
+    )
+  }
+}
+
 check_init_graph <- function(nn, n_points, n_reference) {
-  stopifnot(is.list(nn))
-  stopifnot(!is.null(nn$idx))
-  stopifnot(methods::is(nn$idx, "matrix"))
+  if (!is.list(nn)) {
+    stop("initial neighbor graph must be a list")
+  }
+  if (is.null(nn$idx)) {
+    stop("initial neighbor graph must contain an 'idx' component")
+  }
+  if (!methods::is(nn$idx, "matrix")) {
+    stop("initial neighbor graph 'idx' must be a matrix")
+  }
 
   if (!is.null(nn$dist)) {
-    stopifnot(methods::is(nn$dist, "matrix"))
-    stopifnot(dim(nn$idx) == dim(nn$dist))
+    if (!methods::is(nn$dist, "matrix")) {
+      stop("initial neighbor graph 'dist' must be a matrix")
+    }
+    if (!isTRUE(all(dim(nn$idx) == dim(nn$dist)))) {
+      stop(
+        "initial neighbor graph 'idx' and 'dist' must have the same dimensions"
+      )
+    }
   }
 
   if (nrow(nn$idx) != n_points) {
@@ -189,157 +215,115 @@ check_init_graph <- function(nn, n_points, n_reference) {
     )
   }
 
-  if (anyNA(nn$idx)) {
-    stop("initial neighbor graph indices must not be NA; use 0 for missing entries")
-  }
+  check_candidate_indices(nn$idx, n_reference, "initial neighbor graph")
+  nn
+}
 
-  bad_idx <- nn$idx != 0 & (nn$idx < 1 | nn$idx > n_reference)
-  if (any(bad_idx)) {
+check_candidate_indices <- function(idx, n_reference, graph_name) {
+  if (anyNA(idx)) {
+    stop(graph_name, " indices must not be NA; use 0 for missing entries")
+  }
+  if (any((idx != 0L & idx < 1L) | idx > n_reference)) {
     stop(
-      "initial neighbor graph indices must be between 1 and ",
+      graph_name,
+      " indices must be between 1 and ",
       n_reference,
       " or 0 for missing entries"
     )
   }
+  check_graph_indices(idx, graph_name)
+}
 
+check_graph_entries <- function(graph, n_reference, graph_name) {
+  check_candidate_indices(graph$idx, n_reference, graph_name)
+  if (any((graph$idx == 0L) != is.na(graph$dist))) {
+    stop(
+      graph_name,
+      " must use idx = 0 and dist = NA together for missing entries"
+    )
+  }
+}
+
+# Data and query are column-oriented. Zero indices are filled by the caller.
+prepare_init_graph <- function(
+  nn,
+  k,
+  data,
+  query = NULL,
+  metric = "euclidean",
+  n_threads = 0,
+  verbose = FALSE
+) {
+  if (is.matrix(nn)) {
+    nn <- list(idx = nn)
+  }
+  n_reference <- ncol(data)
+  n_points <- if (is.null(query)) n_reference else ncol(query)
+  nn <- check_init_graph(nn, n_points, n_reference)
+
+  if (ncol(nn$idx) > k) {
+    nn$idx <- nn$idx[, seq_len(k), drop = FALSE]
+    if (!is.null(nn$dist)) {
+      nn$dist <- nn$dist[, seq_len(k), drop = FALSE]
+    }
+  }
+  if (is.null(nn$dist)) {
+    tsmessage("Generating distances for initial indices")
+    nn <- score_knn_indices(data, nn$idx, query, metric, n_threads, verbose)
+  }
+  extra <- k - ncol(nn$idx)
+  if (extra > 0) {
+    nn$idx <- cbind(nn$idx, matrix(0L, n_points, extra))
+    nn$dist <- cbind(nn$dist, matrix(NA_real_, n_points, extra))
+  }
   nn
 }
 
-# data and query must be column-oriented
-# recalculate_distances if TRUE even if a distance matrix is present,
-# recalculate distances from data/query and the indices
-# If augment_low_k = TRUE then if the desired k is > the size of the input nn
-# then add random neighbors to make up the difference
-prepare_init_graph <-
-  function(nn,
-           k,
-           data,
-           query = NULL,
-           metric = "euclidean",
-           recalculate_distances = FALSE,
-           augment_low_k = TRUE,
-           n_threads = 0,
-           verbose = FALSE) {
-    if (is.matrix(nn)) {
-      nn <- list(idx = nn)
+# Column-oriented inputs and validated indices.
+score_knn_indices <- function(data, idx, query, metric, n_threads, verbose) {
+  if (!is.null(query)) {
+    if (is_sparse(data)) {
+      return(rnn_sparse_idx_to_graph_query(
+        ref_ind = data@i,
+        ref_ptr = data@p,
+        ref_data = data@x,
+        query_ind = query@i,
+        query_ptr = query@p,
+        query_data = query@x,
+        ndim = nrow(data),
+        idx = idx,
+        metric = metric,
+        n_threads = n_threads,
+        verbose = verbose
+      ))
     }
-    n_reference <- ncol(data)
-    n_points <- if (is.null(query)) n_reference else ncol(query)
-    nn <- check_init_graph(nn, n_points, n_reference)
-    ## nn is a list dist may be NULL
-
-    # idx has too few or too many columns
-    if (k != ncol(nn$idx)) {
-      if (k > ncol(nn$idx)) {
-        if (!augment_low_k) {
-          stop("Not enough initial neighbors provided for k = ", k)
-        }
-      } else if (k < ncol(nn$idx)) {
-        nn$idx <- nn$idx[, 1:k, drop = FALSE]
-      }
-      # else k == ncol and we need do nothing
+    scorer <- if (is.logical(data)) {
+      rnn_logical_idx_to_graph_query
+    } else {
+      rnn_idx_to_graph_query
     }
-
-    if (!is.null(nn$dist) && !recalculate_distances) {
-      # dist exists and we intend to use the existing values
-      if (k > ncol(nn$dist)) {
-        if (!augment_low_k) {
-          stop("Not enough initial distances provided for k = ", k)
-        }
-      } else if (k < ncol(nn$dist)) {
-        nn$dist <- nn$dist[, 1:k, drop = FALSE]
-      }
-      # otherwise k == ncol and we need do nothing
-    }
-
-    # ensure nn$dist is not NULL and has correct distances at this point
-    if (is.null(nn$dist) || recalculate_distances) {
-      tsmessage("Generating distances for initial indices")
-      if (!is.null(query)) {
-        if (is_sparse(data)) {
-          nn <- rnn_sparse_idx_to_graph_query(
-            ref_ind = data@i,
-            ref_ptr = data@p,
-            ref_data = data@x,
-            query_ind = query@i,
-            query_ptr = query@p,
-            query_data = query@x,
-            ndim = nrow(data),
-            idx = nn$idx,
-            metric = metric,
-            n_threads = n_threads,
-            verbose = verbose
-          )
-        } else if (is.logical(data)) {
-          nn <-
-            rnn_logical_idx_to_graph_query(
-              reference = data,
-              query = query,
-              idx = nn$idx,
-              metric = metric,
-              n_threads = n_threads,
-              verbose = verbose
-            )
-        } else {
-          nn <-
-            rnn_idx_to_graph_query(
-              reference = data,
-              query = query,
-              idx = nn$idx,
-              metric = metric,
-              n_threads = n_threads,
-              verbose = verbose
-            )
-        }
-      } else {
-        if (is_sparse(data)) {
-          nn <-
-            rnn_sparse_idx_to_graph_self(
-              ind = data@i,
-              ptr = data@p,
-              data = data@x,
-              ndim = nrow(data),
-              idx = nn$idx,
-              metric = metric,
-              n_threads = n_threads,
-              verbose = verbose
-            )
-        } else if (is.logical(data)) {
-          nn <-
-            rnn_logical_idx_to_graph_self(
-              data = data,
-              idx = nn$idx,
-              metric = metric,
-              n_threads = n_threads,
-              verbose = verbose
-            )
-        } else {
-          nn <-
-            rnn_idx_to_graph_self(
-              data = data,
-              idx = nn$idx,
-              metric = metric,
-              n_threads = n_threads,
-              verbose = verbose
-            )
-        }
-      }
-    }
-
-    # nn$idx and nn$dist exist and are either the right size or too big
-    if (ncol(nn$idx) == k && ncol(nn$dist) == k) {
-      return(nn)
-    }
-
-    n_aug_nbrs <- k - ncol(nn$idx)
-    nn$idx <- cbind(nn$idx, matrix(0, nrow(nn$idx), ncol = n_aug_nbrs))
-    nn$dist <- cbind(nn$dist, matrix(NA, nrow(nn$idx), ncol = n_aug_nbrs))
-
-    if (ncol(nn$idx) == k && ncol(nn$dist) == k) {
-      return(nn)
-    }
-    stop("Still not right!")
+    return(scorer(data, query, idx, metric, n_threads, verbose))
   }
+
+  if (is_sparse(data)) {
+    return(rnn_sparse_idx_to_graph_self(
+      ind = data@i,
+      ptr = data@p,
+      data = data@x,
+      ndim = nrow(data),
+      idx = idx,
+      metric = metric,
+      n_threads = n_threads,
+      verbose = verbose
+    ))
+  }
+  scorer <- if (is.logical(data)) {
+    rnn_logical_idx_to_graph_self
+  } else {
+    rnn_idx_to_graph_self
+  }
+  scorer(data, idx, metric, n_threads, verbose)
+}
 
 get_reference_graph_k <- function(reference_graph) {
   ncol(reference_graph$idx)
@@ -366,7 +350,7 @@ check_sparse <- function(reference, query) {
     n_sparse_input <- n_sparse_input + 1
   }
   if (n_sparse_input == 1) {
-    stop("Either both or none of query and reference can be sparse")
+    stop("'query' and 'reference' must both be sparse or both be non-sparse")
   }
 
   # let's also check logical in here too
@@ -378,7 +362,7 @@ check_sparse <- function(reference, query) {
     n_logical <- n_logical + 1
   }
   if (n_logical == 1) {
-    stop("Either both or none of query and reference can be logical")
+    stop("'query' and 'reference' must both be logical or both be non-logical")
   }
 }
 
@@ -386,34 +370,17 @@ is_sparse <- function(x) {
   methods::is(x, "sparseMatrix")
 }
 
-validate_are_mergeablel <- function(nn_graphs, is_query = FALSE) {
-  nn_graph1 <- nn_graphs[[1]]
-  validate_nn_graph(nn_graph1, is_query = is_query)
-  n_graphs <- length(nn_graphs)
-  if (n_graphs > 1) {
-    for (i in 2:n_graphs) {
-      validate_are_mergeable(
-        nn_graph1,
-        nn_graphs[[i]],
-        validate1 = FALSE,
-        is_query = is_query
-      )
+validate_merge_graphs <- function(graphs, is_query) {
+  validate_nn_graph(graphs[[1L]], is_query = is_query)
+  first_nr <- nrow(graphs[[1L]]$idx)
+  for (graph in graphs[-1L]) {
+    validate_nn_graph(graph, is_query = is_query)
+    nr <- nrow(graph$idx)
+    if (nr != first_nr) {
+      stop("Graphs must have same number of rows, but are ", first_nr, ", ", nr)
     }
   }
 }
-
-validate_are_mergeable <-
-  function(nn_graph1, nn_graph2, validate1 = TRUE, is_query = FALSE) {
-    if (validate1) {
-      validate_nn_graph(nn_graph1, is_query = is_query)
-    }
-    validate_nn_graph(nn_graph2, is_query = is_query)
-    nr1 <- nrow(nn_graph1$idx)
-    nr2 <- nrow(nn_graph2$idx)
-    if (nr1 != nr2) {
-      stop("Graphs must have same number of rows, but are ", nr1, ", ", nr2)
-    }
-  }
 
 validate_nn_graph <- function(nn_graph, is_query = FALSE) {
   if (is.null(nn_graph$idx)) {
@@ -424,7 +391,7 @@ validate_nn_graph <- function(nn_graph, is_query = FALSE) {
   }
   nr <- nrow(nn_graph$idx)
   nc <- ncol(nn_graph$idx)
-  validate_nn_graph_matrix(nn_graph$dist, nr, nc, msg = "nn matrix")
+  validate_nn_graph_matrix(nn_graph$dist, nr, nc, msg = "'dist'")
 
   if (anyNA(nn_graph$idx)) {
     stop("NN graph indices must not be NA; use 0 for missing entries")
@@ -444,42 +411,53 @@ validate_nn_graph <- function(nn_graph, is_query = FALSE) {
   } else {
     bad_idx <- !missing_idx & (nn_graph$idx < 1L | nn_graph$idx > nr)
     if (any(bad_idx)) {
-      stop("NN graph indices must be between 1 and ", nr, " or 0 for missing entries")
+      stop(
+        "NN graph indices must be between 1 and ",
+        nr,
+        " or 0 for missing entries"
+      )
     }
   }
+  check_graph_indices(nn_graph$idx, "NN graph")
 }
 
 validate_nn_graph_matrix <- function(nn, nr, nc, msg = "matrix") {
   nnr <- nrow(nn)
   nnc <- ncol(nn)
   if (nr != nnr) {
-    stop(msg, " has ", nnr, " rows, should have ", nr)
+    stop(msg, " has ", nnr, " rows; 'idx' has ", nr)
   }
   if (nc != nnc) {
-    stop(msg, " has ", nnc, " cols, should have ", nc)
+    stop(msg, " has ", nnc, " columns; 'idx' has ", nc)
   }
+}
+
+default_n_trees <- function(n_obs) {
+  min(32, 5 + as.integer(round(n_obs^0.25)))
 }
 
 # called by rpf_knn and nnd_knn
 rpf_knn_impl <-
-  function(data,
-           k,
-           metric,
-           use_alt_metric,
-           actual_metric,
-           include_self,
-           ret_forest,
-           leaf_size = NULL,
-           max_tree_depth = 200,
-           n_trees = NULL,
-           margin = "auto",
-           n_threads = 0,
-           verbose = FALSE,
-           unzero = TRUE) {
+  function(
+    data,
+    k,
+    metric,
+    use_alt_metric,
+    actual_metric,
+    include_self,
+    ret_forest,
+    leaf_size = NULL,
+    max_tree_depth = 200,
+    n_trees = NULL,
+    margin = "auto",
+    n_threads = 0,
+    verbose = FALSE,
+    unzero = TRUE,
+    descent_args = NULL
+  ) {
     if (is.null(n_trees)) {
       # data is transposed at this point so n_obs is in the number of columns
-      n_trees <- 5 + as.integer(round(ncol(data)^0.25))
-      n_trees <- min(32, n_trees)
+      n_trees <- default_n_trees(ncol(data))
     }
     if (is.null(leaf_size)) {
       leaf_size <- max(10, k)
@@ -498,12 +476,29 @@ rpf_knn_impl <-
         n_trees,
         " max leaf size = ",
         leaf_size,
-        " margin = '", margin, "'",
+        " margin = '",
+        margin,
+        "'",
         n_threads = n_threads
       )
     )
 
-    if (margin == "implicit") {
+    if (!is.null(descent_args)) {
+      res <- do.call(
+        rnn_binary_tree_descent,
+        c(
+          list(
+            data = data,
+            k = k,
+            n_trees = n_trees,
+            leaf_size = leaf_size,
+            max_tree_depth = max_tree_depth,
+            ret_forest = ret_forest
+          ),
+          descent_args
+        )
+      )
+    } else if (margin == "implicit") {
       if (is_sparse(data)) {
         res <- rnn_sparse_rp_tree_knn_implicit(
           ind = data@i,
@@ -572,6 +567,9 @@ rpf_knn_impl <-
         # no logical code path here: explicit margin doesn't lend itself
         # easily to the logical-specialized metrics so if you want to do that
         # you should use implicit margin
+        if (is.logical(data) && anyNA(data)) {
+          stop("Logical feature values must not be NA")
+        }
         res <- rnn_rp_tree_knn_explicit(
           data,
           k,
@@ -590,7 +588,13 @@ rpf_knn_impl <-
 
     if (ret_forest) {
       res$forest <-
-        set_forest_data(res$forest, use_alt_metric, metric, is_sparse(data))
+        set_forest_data(
+          res$forest,
+          use_alt_metric,
+          metric,
+          is_sparse(data),
+          build_data = data
+        )
     }
 
     # can't apply uncorrection here as we are not necessarily finishing the
@@ -598,7 +602,21 @@ rpf_knn_impl <-
     res
   }
 
-set_forest_data <- function(forest, use_alt_metric, metric, is_sparse) {
+set_forest_data <- function(
+  forest,
+  use_alt_metric,
+  metric,
+  is_sparse,
+  build_data = NULL
+) {
+  if (
+    is_packed_jaccard(metric, build_data) &&
+      use_alt_metric &&
+      identical(forest$actual_metric, "jaccard")
+  ) {
+    # Tree seeding and graph traversal share the query score.
+    forest$actual_metric <- find_alt_metric(metric, FALSE)
+  }
   forest$use_alt_metric <- use_alt_metric
   forest$original_metric <- metric
   forest$sparse <- is_sparse
@@ -610,17 +628,38 @@ is_rpforest <- function(forest) {
   !is.null(forest$type) && forest$type == "rnndescent:rpforest"
 }
 
-check_rpforest_matches_reference <- function(forest,
-                                             n_reference,
-                                             n_features = NULL) {
-  if (is.null(forest$trees) || !is.list(forest$trees) ||
-      length(forest$trees) < 1) {
-    stop("Bad forest format: no trees")
+check_rpforest_matches_reference <- function(
+  forest,
+  n_reference,
+  n_features = NULL,
+  reference_is_sparse
+) {
+  if (!is.list(forest)) {
+    stop("'forest' must be a list")
+  }
+  if (is.null(forest$margin)) {
+    stop("'forest' must contain a 'margin' component")
+  }
+  if (reference_is_sparse && !isTRUE(forest$sparse)) {
+    stop("A dense forest cannot be used with a sparse 'reference'")
+  }
+  if (!reference_is_sparse && isTRUE(forest$sparse)) {
+    stop("A sparse forest cannot be used with a dense 'reference'")
   }
 
-  tree_n_items <- vapply(forest$trees, function(tree) {
-    length(tree$indices)
-  }, integer(1))
+  if (
+    is.null(forest$trees) || !is.list(forest$trees) || length(forest$trees) < 1
+  ) {
+    stop("'forest$trees' must be a non-empty list")
+  }
+
+  tree_n_items <- vapply(
+    forest$trees,
+    function(tree) {
+      length(tree$indices)
+    },
+    integer(1)
+  )
   bad_tree <- which(tree_n_items != n_reference)
   if (length(bad_tree) > 0) {
     stop(
@@ -633,21 +672,28 @@ check_rpforest_matches_reference <- function(forest,
     )
   }
 
-  if (!is.null(n_features) && identical(forest$margin, "explicit") &&
-      !isTRUE(forest$sparse)) {
-    tree_n_features <- vapply(forest$trees, function(tree) {
-      if (is.null(tree$hyperplanes)) {
-        return(NA_integer_)
-      }
-      ncol(tree$hyperplanes)
-    }, integer(1))
+  if (
+    !is.null(n_features) &&
+      identical(forest$margin, "explicit") &&
+      !isTRUE(forest$sparse)
+  ) {
+    tree_n_features <- vapply(
+      forest$trees,
+      function(tree) {
+        if (is.null(tree$hyperplanes)) {
+          return(NA_integer_)
+        }
+        ncol(tree$hyperplanes)
+      },
+      integer(1)
+    )
 
     missing_hyperplanes <- which(is.na(tree_n_features))
     if (length(missing_hyperplanes) > 0) {
       stop(
-        "Bad forest format: explicit forest tree ",
+        "Explicit dense forest tree ",
         missing_hyperplanes[1],
-        " has no hyperplanes"
+        " must contain 'hyperplanes'"
       )
     }
 
@@ -664,24 +710,31 @@ check_rpforest_matches_reference <- function(forest,
     }
   }
 
-  if (!is.null(n_features) && identical(forest$margin, "explicit") &&
-      isTRUE(forest$sparse)) {
-    tree_n_features <- vapply(forest$trees, function(tree) {
-      if (is.null(tree$hyperplanes_ind)) {
-        return(NA_integer_)
-      }
-      if (length(tree$hyperplanes_ind) == 0L) {
-        return(0L)
-      }
-      max(tree$hyperplanes_ind) + 1L
-    }, integer(1))
+  if (
+    !is.null(n_features) &&
+      identical(forest$margin, "explicit") &&
+      isTRUE(forest$sparse)
+  ) {
+    tree_n_features <- vapply(
+      forest$trees,
+      function(tree) {
+        if (is.null(tree$hyperplanes_ind)) {
+          return(NA_integer_)
+        }
+        if (length(tree$hyperplanes_ind) == 0L) {
+          return(0L)
+        }
+        max(tree$hyperplanes_ind) + 1L
+      },
+      integer(1)
+    )
 
     missing_hyperplanes <- which(is.na(tree_n_features))
     if (length(missing_hyperplanes) > 0) {
       stop(
-        "Bad forest format: explicit sparse forest tree ",
+        "Explicit sparse forest tree ",
         missing_hyperplanes[1],
-        " has no hyperplanes_ind"
+        " must contain 'hyperplanes_ind'"
       )
     }
 
@@ -701,13 +754,15 @@ check_rpforest_matches_reference <- function(forest,
 
 # reference and query are column-oriented
 random_knn_impl <-
-  function(reference,
-           k,
-           actual_metric,
-           order_by_distance,
-           n_threads,
-           verbose,
-           query = NULL) {
+  function(
+    reference,
+    k,
+    actual_metric,
+    order_by_distance,
+    n_threads,
+    verbose,
+    query = NULL
+  ) {
     if (is.null(query)) {
       msg <- "Generating random k-nearest neighbor graph with k = "
 
@@ -762,10 +817,7 @@ random_knn_impl <-
         verbose = verbose
       )
     )
-    tsmessage(thread_msg(msg,
-      k,
-      n_threads = n_threads
-    ))
+    tsmessage(thread_msg(msg, k, n_threads = n_threads))
     res <- do.call(fun, args)
     res
   }

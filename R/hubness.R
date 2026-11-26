@@ -61,9 +61,7 @@
 #' *International Journal on Artificial Intelligence Tools*, *28*(06), 1960002.
 #' \doi{10.1142/S0218213019600029}
 #' @export
-k_occur <- function(idx,
-                    k = NULL,
-                    include_self = TRUE) {
+k_occur <- function(idx, k = NULL, include_self = TRUE) {
   if (methods::is(idx, "sparseMatrix")) {
     counts <- tabulate(Matrix::t(idx)@i + 1L, nbins = ncol(idx))
     if (!include_self) {
@@ -78,13 +76,21 @@ k_occur <- function(idx,
   if (is.list(idx)) {
     idx <- idx$idx
   }
-  stopifnot(methods::is(idx, "matrix"))
+  if (!methods::is(idx, "matrix")) {
+    stop("Expected a matrix of neighbor indices in 'idx'")
+  }
   if (is.null(k)) {
     k <- ncol(idx)
   }
   nc <- ncol(idx)
-  stopifnot(k >= 1)
-  stopifnot(k <= nc)
+  valid_k <- k >= 1
+  if (!(is.logical(valid_k) && !anyNA(valid_k) && all(valid_k))) {
+    stop("'k' must be at least 1")
+  }
+  valid_k <- k <= nc
+  if (!(is.logical(valid_k) && !anyNA(valid_k) && all(valid_k))) {
+    stop("'k' must not exceed the number of neighbor columns")
+  }
   len <- max(idx)
   rnn_reverse_nbr_size(idx, k, len, include_self)
 }

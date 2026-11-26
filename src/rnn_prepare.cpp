@@ -26,8 +26,13 @@
 #include <Rcpp.h>
 
 #include "rnn_distance.h"
+#include "rnn_distance_batch.h"
 #include "rnn_parallel.h"
 #include "rnn_progress.h"
+
+#include <atomic>
+#include <chrono>
+#include <future>
 
 using Rcpp::IntegerVector;
 using Rcpp::List;
@@ -35,11 +40,109 @@ using Rcpp::LogicalMatrix;
 using Rcpp::NumericMatrix;
 using Rcpp::NumericVector;
 
+namespace {
+
 template <typename Out, typename Idx>
+auto diversify_by_degree(const tdoann::SparseNNGraph<Out, Idx> &graph,
+                         const tdoann::BaseDistance<Out, Idx> &distance,
+                         double prune_probability, std::size_t n_threads,
+                         bool verbose) -> tdoann::SparseNNGraph<Out, Idx> {
+  struct Range {
+    std::size_t begin;
+    std::size_t end;
+    uint64_t comparisons;
+  };
+
+  // Keep the original ranges and use their end rows as stream IDs. Moving
+  // entire ranges preserves the draws assigned to every fractional prune.
+  const auto batch_size = tdoann::diversification_rows_per_worker * n_threads;
+  std::vector<Range> ranges;
+  for (std::size_t begin = 0; begin < graph.n_points; begin += batch_size) {
+    const auto end = std::min(begin + batch_size, graph.n_points);
+    for (const auto &[first, last] :
+         pforr::split_input_range({begin, end}, n_threads, 1)) {
+      uint64_t comparisons = 0;
+      for (auto row = first; row < last; ++row) {
+        const uint64_t degree = graph.n_nbrs(row);
+        if (degree > 1) {
+          comparisons += degree * (degree - 1) / 2;
+        }
+      }
+      ranges.push_back({first, last, comparisons});
+    }
+  }
+  std::stable_sort(ranges.begin(), ranges.end(),
+                   [](const Range &a, const Range &b) {
+                     return a.comparisons > b.comparisons;
+                   });
+
+  tdoann::SparseNNGraph<Out, Idx> result(graph.row_ptr, graph.col_idx,
+                                         graph.dist);
+  rnndescent::ParallelRNGAdapter<rnndescent::PcgRand> random;
+  random.initialize();
+  std::atomic<std::size_t> next{0};
+  std::atomic<unsigned> completed{0};
+  std::atomic<bool> cancelled{false};
+  const auto stop = [&] { return cancelled.load(std::memory_order_relaxed); };
+  auto worker = [&](std::size_t, std::size_t) {
+    try {
+      while (!stop()) {
+        const auto i = next.fetch_add(1, std::memory_order_relaxed);
+        if (i >= ranges.size()) {
+          return;
+        }
+        const auto &range = ranges[i];
+        auto rng = random.get_parallel_instance(range.end);
+        tdoann::remove_long_edges_impl(graph, distance, *rng, prune_probability,
+                                       result, range.begin, range.end, stop);
+        if (verbose) {
+          completed.fetch_add(1, std::memory_order_relaxed);
+        }
+      }
+    } catch (...) {
+      cancelled.store(true, std::memory_order_relaxed);
+      throw;
+    }
+  };
+
+  RParallelExecutor executor;
+  RInterruptableProgress interrupt;
+  tdoann::ProgressBar progress(ranges.size(), verbose, Rcpp::Rcerr);
+  // The future joins on scope exit. Only the calling thread checks R.
+  auto work = std::async(std::launch::async, [&] {
+    executor.parallel_for(0, n_threads, worker, n_threads, 1);
+  });
+  try {
+    while (work.wait_for(std::chrono::milliseconds(10)) !=
+           std::future_status::ready) {
+      interrupt.check_interrupt();
+      if (verbose) {
+        progress.update(completed.load(std::memory_order_relaxed));
+      }
+    }
+    work.get();
+    interrupt.check_interrupt();
+  } catch (...) {
+    cancelled.store(true, std::memory_order_relaxed);
+    throw;
+  }
+  return result;
+}
+
+} // namespace
+
+template <typename Out, typename Idx, typename CalculateFour = std::nullptr_t>
 List diversify_impl(const tdoann::BaseDistance<Out, Idx> &distance,
                     List graph_list, double prune_probability,
-                    std::size_t n_threads, bool verbose) {
+                    std::size_t n_threads, bool verbose,
+                    bool balance_work = false,
+                    const CalculateFour &calculate_four = nullptr) {
   const auto graph = r_to_sparse_graph<Out, Idx>(graph_list);
+  if (balance_work && n_threads > 1 &&
+      graph.n_points > tdoann::diversification_rows_per_worker * n_threads) {
+    return sparse_graph_to_r(diversify_by_degree(
+        graph, distance, prune_probability, n_threads, verbose));
+  }
 
   std::optional<tdoann::SparseNNGraph<Out, Idx>> diversified;
   if (n_threads == 0) {
@@ -52,7 +155,7 @@ List diversify_impl(const tdoann::BaseDistance<Out, Idx> &distance,
     rnndescent::ParallelRNGAdapter<rnndescent::PcgRand> parallel_rand;
     diversified = tdoann::remove_long_edges(graph, distance, parallel_rand,
                                             prune_probability, n_threads,
-                                            progress, executor);
+                                            progress, executor, calculate_four);
   }
   return sparse_graph_to_r(*diversified);
 }
@@ -62,18 +165,34 @@ List rnn_sparse_diversify(const IntegerVector &ind, const IntegerVector &ptr,
                           const NumericVector &data, std::size_t ndim,
                           const List &graph_list, const std::string &metric,
                           double prune_probability, std::size_t n_threads,
-                          bool verbose) {
+                          bool verbose, bool balance_work = false) {
   auto distance_ptr = create_sparse_self_distance(ind, ptr, data, ndim, metric);
   return diversify_impl(*distance_ptr, graph_list, prune_probability, n_threads,
-                        verbose);
+                        verbose, balance_work);
 }
 
 // [[Rcpp::export]]
 List rnn_diversify(const NumericMatrix &data, const List &graph_list,
                    const std::string &metric, double prune_probability,
                    std::size_t n_threads, bool verbose) {
-  auto distance_ptr = create_self_distance(data, metric);
-  return diversify_impl(*distance_ptr, graph_list, prune_probability, n_threads,
+  using Distance =
+      tdoann::VectorDistance<RNN_DEFAULT_IN, RNN_DEFAULT_DIST, RNN_DEFAULT_IDX>;
+  const auto distance = create_self_distance_impl<Distance>(data, metric);
+  if (n_threads > 1 && metric == "sqeuclidean" && distance->get_nx() > 0) {
+    using Kernel =
+        rnndescent::DenseDistanceFour<RNN_DEFAULT_DIST, RNN_DEFAULT_IDX>;
+    const auto *reference = &*distance->get_x(0);
+    const auto dimension = static_cast<std::size_t>(data.nrow());
+    const auto calculate_four = [reference,
+                                 dimension](RNN_DEFAULT_IDX anchor,
+                                            const Kernel::Targets &targets) {
+      return Kernel::run<rnndescent::DenseBatchMetric::squared_euclidean>(
+          reference, dimension, anchor, targets);
+    };
+    return diversify_impl(*distance, graph_list, prune_probability, n_threads,
+                          verbose, false, calculate_four);
+  }
+  return diversify_impl(*distance, graph_list, prune_probability, n_threads,
                         verbose);
 }
 

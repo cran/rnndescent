@@ -1,5 +1,4 @@
 library(rnndescent)
-context("Search graph preparation")
 
 ui10_bf <- brute_force_knn(ui10, k = 4)
 
@@ -13,6 +12,7 @@ test_that("single thread prepare", {
     )
 
   expect_s4_class(sg_full, "sparseMatrix")
+  # fmt: skip
   expect_equal(
     sg_full@x,
     c(
@@ -23,6 +23,7 @@ test_that("single thread prepare", {
     ),
     tolerance = 1e-4
   )
+  # fmt: skip
   expect_equal(
     sg_full@i,
     c(
@@ -39,6 +40,7 @@ test_that("single thread prepare", {
       diversify_prob = 1,
       pruning_degree_multiplier = NULL
     )
+  # fmt: skip
   expect_equal(
     sg_occ@x,
     c(
@@ -47,7 +49,10 @@ test_that("single thread prepare", {
     ),
     tolerance = 1e-4
   )
-  expect_equal(sg_occ@i, c(5, 6, 4, 5, 6, 7, 8, 2, 7, 0, 2, 9, 1, 2, 3, 4, 3, 5))
+  expect_equal(
+    sg_occ@i,
+    c(5, 6, 4, 5, 6, 7, 8, 2, 7, 0, 2, 9, 1, 2, 3, 4, 3, 5)
+  )
   expect_equal(sg_occ@p, c(0, 1, 2, 5, 7, 9, 12, 14, 16, 17, 18))
 
   set.seed(1337)
@@ -58,6 +63,7 @@ test_that("single thread prepare", {
       diversify_prob = 0.5,
       pruning_degree_multiplier = NULL
     ))
+  # fmt: skip
   expect_equal(
     sg_occp@x,
     c(
@@ -67,12 +73,12 @@ test_that("single thread prepare", {
     ),
     tolerance = 1e-4
   )
+  # fmt: skip
   expect_equal(sg_occp@i, c(
     2, 5, 9, 2, 3, 6, 0, 4, 5, 6, 9, 1, 7, 8, 2, 7, 0, 2, 9, 1, 2, 7, 3, 4, 6,
     3, 0, 5
   ))
   expect_equal(sg_occp@p, c(0, 3, 6, 11, 14, 16, 19, 22, 25, 26, 28))
-
 
   sg_trunc <-
     Matrix::t(prepare_search_graph(
@@ -81,6 +87,7 @@ test_that("single thread prepare", {
       diversify_prob = NULL,
       pruning_degree_multiplier = 1.5
     ))
+  # fmt: skip
   expect_equal(
     sg_trunc@x,
     c(
@@ -91,6 +98,7 @@ test_that("single thread prepare", {
     ),
     tolerance = 1e-4
   )
+  # fmt: skip
   expect_equal(
     sg_trunc@i,
     c(
@@ -107,6 +115,7 @@ test_that("single thread prepare", {
       diversify_prob = 1,
       pruning_degree_multiplier = 0.5
     ))
+  # fmt: skip
   expect_equal(
     sg_occ_trunc@x,
     c(
@@ -115,6 +124,7 @@ test_that("single thread prepare", {
     ),
     tolerance = 1e-4
   )
+  # fmt: skip
   expect_equal(
     sg_occ_trunc@i,
     c(
@@ -135,6 +145,7 @@ test_that("parallel prepare", {
     ))
 
   expect_s4_class(sg_full, "sparseMatrix")
+  # fmt: skip
   expect_equal(
     sg_full@x,
     c(
@@ -145,6 +156,7 @@ test_that("parallel prepare", {
     ),
     tolerance = 1e-4
   )
+  # fmt: skip
   expect_equal(
     sg_full@i,
     c(
@@ -162,6 +174,7 @@ test_that("parallel prepare", {
       pruning_degree_multiplier = NULL,
       n_threads = 1
     ))
+  # fmt: skip
   expect_equal(
     sg_occ@x,
     c(
@@ -170,7 +183,10 @@ test_that("parallel prepare", {
     ),
     tolerance = 1e-4
   )
-  expect_equal(sg_occ@i, c(5, 6, 4, 5, 6, 7, 8, 2, 7, 0, 2, 9, 1, 2, 3, 4, 3, 5))
+  expect_equal(
+    sg_occ@i,
+    c(5, 6, 4, 5, 6, 7, 8, 2, 7, 0, 2, 9, 1, 2, 3, 4, 3, 5)
+  )
   expect_equal(sg_occ@p, c(0, 1, 2, 5, 7, 9, 12, 14, 16, 17, 18))
 
   set.seed(1337)
@@ -189,7 +205,6 @@ test_that("parallel prepare", {
   expect_true(all(formatC(sg_occ@x) %in% formatC(sg_occp@x)))
   expect_true(all(formatC(sg_occp@x) %in% formatC(sg_full@x)))
 
-
   sg_trunc <-
     Matrix::t(prepare_search_graph(
       data = ui10,
@@ -198,6 +213,7 @@ test_that("parallel prepare", {
       pruning_degree_multiplier = 1.5,
       n_threads = 1
     ))
+  # fmt: skip
   expect_equal(
     sg_trunc@x,
     c(
@@ -208,6 +224,7 @@ test_that("parallel prepare", {
     ),
     tolerance = 1e-4
   )
+  # fmt: skip
   expect_equal(
     sg_trunc@i,
     c(
@@ -225,6 +242,7 @@ test_that("parallel prepare", {
       pruning_degree_multiplier = 0.5,
       n_threads = 1
     ))
+  # fmt: skip
   expect_equal(
     sg_occ_trunc@x,
     c(
@@ -233,6 +251,7 @@ test_that("parallel prepare", {
     ),
     tolerance = 1e-4
   )
+  # fmt: skip
   expect_equal(
     sg_occ_trunc@i,
     c(
@@ -249,42 +268,60 @@ test_that("explicit zeros are preserved", {
     Matrix::t(prepare_search_graph(
       data = ui10,
       graph = ui10_bf0
-  ))
+    ))
   expect_true(sg_0[10, 3] > 0)
 })
 
-test_that("degree pruning keeps the max_degree closest edges", {
-  gl <- list(
-    row_ptr = c(0L, 4L, 4L, 4L, 4L),
-    col_idx = c(0L, 1L, 2L, 3L),
-    dist = c(3, 1, 2, 4)
-  )
-
-  expect_equal(
-    rnndescent:::rnn_degree_prune(gl, max_degree = 2L, n_threads = 0L)$dist,
-    c(0, 1, 2, 0)
-  )
-
+test_that("degree pruning keeps the closest outgoing edge", {
+  data <- matrix(c(0, 9, 2, 5), ncol = 1)
   graph <- Matrix::sparseMatrix(
-    p = gl$row_ptr,
-    j = gl$col_idx,
-    x = gl$dist,
-    dims = c(4, 4),
-    repr = "C",
-    index1 = FALSE
+    i = rep(1L, 3),
+    j = 2:4,
+    x = c(9, 2, 5),
+    dims = c(4, 4)
+  )
+  prepared <- prepare_search_graph(
+    data,
+    graph,
+    diversify_prob = 0,
+    pruning_degree_multiplier = 1
+  )
+  expect_equal(as.numeric(prepared[, 1L]), c(0, 0, 2, 0))
+})
+
+test_that("prepare_search_graph caps equal-distance outgoing neighbors", {
+  neighbors <- lapply(seq_len(5), function(i) setdiff(seq_len(5), i))
+  graph <- Matrix::sparseMatrix(
+    i = rep(seq_len(5), each = 4),
+    j = unlist(neighbors),
+    x = sqrt(2),
+    dims = c(5, 5)
+  )
+  expected_neighbors <- list(
+    c(2L, 3L),
+    c(1L, 3L),
+    c(1L, 2L),
+    c(1L, 2L),
+    c(1L, 2L)
   )
 
-  expect_equal(
-    as.matrix(rnndescent:::degree_prune(graph, max_degree = 2L)),
-    matrix(
-      c(0, 1, 2, 0,
-        0, 0, 0, 0,
-        0, 0, 0, 0,
-        0, 0, 0, 0),
-      nrow = 4,
-      byrow = TRUE
+  for (n_threads in c(0L, 2L)) {
+    prepared <- prepare_search_graph(
+      data = diag(5),
+      graph = graph,
+      use_alt_metric = FALSE,
+      diversify_prob = 0,
+      pruning_degree_multiplier = 0.5,
+      n_threads = n_threads
     )
-  )
+    # The result is transposed: each column holds one outgoing neighbor list.
+    expect_equal(as.integer(Matrix::colSums(prepared != 0)), rep(2L, 5))
+    expect_equal(
+      lapply(seq_len(5), function(i) which(prepared[, i] != 0)),
+      expected_neighbors
+    )
+    expect_equal(prepared@x, rep(sqrt(2), 10), tolerance = 1e-7)
+  }
 })
 
 test_that("prepare_search_graph rejects malformed graphs before sparse conversion", {
@@ -347,6 +384,7 @@ test_that("prepare_search_graph rejects malformed graphs before sparse conversio
 
 test_that("prepare_search_graph prunes reverse edges without diversification", {
   data <- matrix(seq_len(10), ncol = 2)
+  # fmt: skip
   graph <- list(
     idx = matrix(c(
       4L, 5L,
@@ -421,6 +459,7 @@ test_that("column orientation", {
       n_threads = 2,
       obs = "C"
     ))
+  # fmt: skip
   expect_equal(
     sg_occ_trunc@x,
     c(
@@ -429,6 +468,7 @@ test_that("column orientation", {
     ),
     tolerance = 1e-4
   )
+  # fmt: skip
   expect_equal(
     sg_occ_trunc@i,
     c(
@@ -478,14 +518,16 @@ test_that("prune twice with different prob", {
   iris_knn <- brute_force_knn(iris, k = 15)
   set.seed(42)
   sg1 <-
-    prepare_search_graph(iris,
+    prepare_search_graph(
+      iris,
       iris_knn,
       diversify_prob = 1.0,
       pruning_degree_multiplier = NULL
     )
   set.seed(42)
   sg1_0.5 <-
-    prepare_search_graph(iris,
+    prepare_search_graph(
+      iris,
       sg1,
       diversify_prob = 0.5,
       pruning_degree_multiplier = NULL
@@ -493,7 +535,8 @@ test_that("prune twice with different prob", {
 
   set.seed(42)
   sg0.5 <-
-    prepare_search_graph(iris,
+    prepare_search_graph(
+      iris,
       iris_knn,
       diversify_prob = 0.5,
       pruning_degree_multiplier = NULL
@@ -504,4 +547,78 @@ test_that("prune twice with different prob", {
   expect_gt(Matrix::nnzero(sg0.5), Matrix::nnzero(sg1))
   expect_gt(Matrix::nnzero(sg1_0.5), Matrix::nnzero(sg1))
   expect_gt(Matrix::nnzero(sg0.5), Matrix::nnzero(sg1_0.5))
+})
+
+test_that("degree scheduling preserves sparse reverse pruning and RNG state", {
+  set.seed(271L)
+  data <- matrix(runif(259L * 5L), nrow = 259L)
+  data[data < 0.45] <- 0
+  data <- Matrix::Matrix(data, sparse = TRUE)
+  graph <- brute_force_knn(data, k = 12L, metric = "cosine")
+  original <- rnndescent:::rnn_sparse_diversify
+  enabled <- FALSE
+  balanced <- FALSE
+  local_mocked_bindings(
+    rnn_sparse_diversify = function(..., balance_work = FALSE) {
+      if (balance_work && enabled) {
+        balanced <<- TRUE
+      }
+      original(..., balance_work = balance_work && enabled)
+    },
+    .package = "rnndescent"
+  )
+  prepare <- function(seed) {
+    set.seed(seed)
+    dqrng::dqset.seed(seed)
+    result <- prepare_search_graph(
+      data,
+      graph,
+      metric = "cosine",
+      diversify_prob = 0.5,
+      n_threads = 2L
+    )
+    list(graph = result, rng = .Random.seed, dqrng = dqrng::dqrng_get_state())
+  }
+  first <- prepare(712L)
+  second <- prepare(713L)
+  expect_false(identical(first$graph, second$graph))
+  enabled <- TRUE
+  expect_identical(prepare(712L), first)
+  expect_identical(prepare(713L), second)
+  expect_true(balanced)
+})
+
+test_that("batched diversification preserves fractional pruning", {
+  axes <- diag(5)
+  data <- rbind(0, axes, 2 * axes[1, ], 3 * axes[2, ])
+  # Test a wider forward row and its transpose, which has a wider reverse row.
+  graph <- Matrix::sparseMatrix(
+    i = rep(1L, nrow(data) - 1L),
+    j = 2:nrow(data),
+    x = sqrt(rowSums(data[-1L, , drop = FALSE]^2)),
+    dims = rep(nrow(data), 2L)
+  )
+  prepare <- function(graph, probability, use_alt_metric) {
+    set.seed(710L)
+    dqrng::dqset.seed(710L)
+    result <- prepare_search_graph(
+      data,
+      graph,
+      use_alt_metric = use_alt_metric,
+      diversify_prob = probability,
+      pruning_degree_multiplier = NULL,
+      n_threads = 2L
+    )
+    list(graph = result, rng = .Random.seed, dqrng = dqrng::dqrng_get_state())
+  }
+  # All stored edge lengths are small integers, so squaring and correcting
+  # them can reproduce the scalar Euclidean result exactly.
+  for (input in list(graph, Matrix::t(graph))) {
+    for (probability in c(0.5, 1)) {
+      expect_identical(
+        prepare(input, probability, use_alt_metric = TRUE),
+        prepare(input, probability, use_alt_metric = FALSE)
+      )
+    }
+  }
 })

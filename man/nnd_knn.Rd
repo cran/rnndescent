@@ -32,7 +32,9 @@ or \code{\link[Matrix:sparseMatrix]{Matrix::sparseMatrix()}}. Sparse matrices sh
 format. Dataframes will be converted to \code{numerical} matrix format
 internally, so if your data columns are \code{logical} and intended to be used
 with the specialized binary \code{metric}s, you should convert it to a logical
-matrix first (otherwise you will get the slower dense numerical version).}
+matrix first (otherwise you will get the slower dense numerical version).
+Numeric feature values must be finite: \code{NA}, \code{NaN}, \code{Inf} and \code{-Inf}
+are not allowed.}
 
 \item{k}{Number of nearest neighbors to return. Optional if \code{init} is
 specified.}
@@ -45,6 +47,8 @@ specified.}
 \item \code{"correlation"} (1 minus the Pearson correlation)
 \item \code{"cosine"}
 \item \code{"dice"}
+\item \code{"dot"} (1 minus the normalized dot product, capped at 1;
+1 if either vector is zero)
 \item \code{"euclidean"}
 \item \code{"hamming"}
 \item \code{"haversine"} (great-circle distance for 2D latitude/longitude in
@@ -56,12 +60,16 @@ degrees are encountered)
 \item \code{"kulsinski"}
 \item \code{"sqeuclidean"} (squared Euclidean)
 \item \code{"manhattan"}
+\item \code{"matching"} (fraction of features whose zero/nonzero indicators
+differ)
 \item \code{"rogerstanimoto"}
 \item \code{"russellrao"}
 \item \code{"sokalmichener"}
 \item \code{"sokalsneath"}
 \item \code{"spearmanr"} (1 minus the Spearman rank correlation)
 \item \code{"symmetrickl"} (symmetric Kullback-Leibler divergence)
+\item \code{"trueangular"} (angle between vectors divided by pi; 0 for two zero
+vectors and 1/2 when exactly one vector is zero)
 \item \code{"tsss"} (Triangle Area Similarity-Sector Area Similarity or TS-SS
 metric)
 \item \code{"yule"}
@@ -155,12 +163,12 @@ a small improvement in accuracy. Because this incurs a small extra cost of
 counting the degree of each node, and because it tends to delay early
 convergence, by default this is \code{FALSE}.}
 
-\item{use_alt_metric}{If \code{TRUE}, use faster metrics that maintain the
-ordering of distances internally (e.g. squared Euclidean distances if using
-\code{metric = "euclidean"}), then apply a correction at the end. Probably
-the only reason to set this to \code{FALSE} is if you suspect that some
-sort of numeric issue is occurring with your data in the alternative code
-path.}
+\item{use_alt_metric}{If \code{TRUE}, use alternative scores such as squared
+Euclidean distance internally and return distances in the requested metric.
+With \code{metric = "jaccard"} and a dense logical matrix, construction uses
+ordinary packed Jaccard.
+Queries using the resulting Jaccard forest use log scoring by default. Set
+\code{use_alt_metric = FALSE} to use ordinary Jaccard for queries.}
 
 \item{n_threads}{Number of threads to use.}
 
@@ -225,7 +233,9 @@ iris_nn <- nnd_knn(iris, k = 4, metric = "euclidean", verbose = TRUE)
 # calculate the initialization are compatible with the metric options used
 # by nnd_knn).
 iris_nn <- random_knn(iris, k = 4, metric = "euclidean")
-iris_nn <- nnd_knn(iris, init = iris_nn, metric = "euclidean", verbose = TRUE)
+iris_nn <- nnd_knn(
+  iris, init = iris_nn, metric = "euclidean", verbose = TRUE
+)
 
 # Number of iterations controls how much optimization is attempted. A smaller
 # value will run faster but give poorer results
@@ -240,9 +250,12 @@ iris_nn <- nnd_knn(iris, k = 4, metric = "euclidean", max_candidates = 50)
 # stop progress earlier. The verbose flag will provide some information if
 # convergence is occurring before all iterations are carried out.
 set.seed(1337)
-iris_nn <- nnd_knn(iris, k = 4, metric = "euclidean", n_iters = 5, delta = 0.5)
+iris_nn <- nnd_knn(
+  iris, k = 4, metric = "euclidean", n_iters = 5, delta = 0.5
+)
 
-# To ensure that descent only stops if no improvements are made, set delta = 0
+# To ensure that descent only stops if no improvements are made,
+# set delta = 0
 set.seed(1337)
 iris_nn <- nnd_knn(iris, k = 4, metric = "euclidean", n_iters = 5, delta = 0)
 
@@ -266,7 +279,8 @@ In \emph{Proceedings of the fortieth annual ACM symposium on Theory of computing
 \doi{10.1145/1374376.1374452}.
 
 Dong, W., Moses, C., & Li, K. (2011, March).
-Efficient k-nearest neighbor graph construction for generic similarity measures.
+Efficient k-nearest neighbor graph construction for generic similarity
+measures.
 In \emph{Proceedings of the 20th international conference on World Wide Web}
 (pp. 577-586).
 ACM.

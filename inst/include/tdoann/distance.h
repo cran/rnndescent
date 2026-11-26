@@ -22,16 +22,21 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
 // CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// OF SUCH DAMAGE.
+// POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef TDOANN_DISTANCE_H
 #define TDOANN_DISTANCE_H
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <iterator>
+#include <limits>
 #include <numeric>
+#include <type_traits>
 #include <vector>
 
 // NOLINTBEGIN(readability-identifier-length)
@@ -91,6 +96,50 @@ Out chebyshev(const It xbegin, const It xend, const It ybegin) {
   return result;
 }
 
+// Scalar and batched kernels use the same zero-norm and rounding rules.
+template <typename Out>
+Out finish_correlation(Out product, Out norm_x, Out norm_y) {
+  if (norm_x == 0 && norm_y == 0) {
+    return 0;
+  }
+  if (norm_x == 0 || norm_y == 0) {
+    return 1;
+  }
+  return 1 - (product / (std::sqrt(norm_x) * std::sqrt(norm_y)));
+}
+
+template <typename Out> Out finish_cosine(Out product, Out norm_x, Out norm_y) {
+  return std::max(finish_correlation(product, norm_x, norm_y), Out{0});
+}
+
+template <typename Out>
+Out finish_log_normalized_product(Out product, Out norm_x, Out norm_y) {
+  if (norm_x == 0 && norm_y == 0) {
+    return 0;
+  }
+  if (norm_x == 0 || norm_y == 0 || product <= 0) {
+    return std::numeric_limits<Out>::max();
+  }
+  return std::log2(std::sqrt(norm_x * norm_y) / product);
+}
+
+template <typename Out>
+Out finish_alternative_cosine(Out product, Out norm_x, Out norm_y) {
+  return std::max(finish_log_normalized_product(product, norm_x, norm_y),
+                  Out{0});
+}
+
+template <typename Out>
+Out finish_hellinger(Out product, Out norm_x, Out norm_y) {
+  if (norm_x == 0 && norm_y == 0) {
+    return 0;
+  }
+  if (norm_x == 0 || norm_y == 0) {
+    return 1;
+  }
+  return std::sqrt(std::max(1 - product / std::sqrt(norm_x * norm_y), Out{0}));
+}
+
 template <typename Out, typename It>
 Out correlation(const It xbegin, const It xend, const It ybegin) {
   Out xmu = 0;
@@ -114,13 +163,7 @@ Out correlation(const It xbegin, const It xend, const It ybegin) {
     normy += y * y;
   }
 
-  if (normx == 0 && normy == 0) {
-    return 0;
-  }
-  if (normx == 0 || normy == 0) {
-    return 1;
-  }
-  return 1 - (res / std::sqrt(normx * normy));
+  return finish_correlation(res, normx, normy);
 }
 
 template <typename Out, typename It>
@@ -137,13 +180,7 @@ Out cosine(const It xbegin, const It xend, const It ybegin) {
     norm_y += y * y;
   }
 
-  if (norm_x == 0 && norm_y == 0) {
-    return 0;
-  }
-  if (norm_x == 0 || norm_y == 0) {
-    return 1;
-  }
-  return 1 - (result / std::sqrt(norm_x * norm_y));
+  return finish_cosine(result, norm_x, norm_y);
 }
 
 template <typename Out, typename It>
@@ -160,14 +197,7 @@ Out alternative_cosine(const It xbegin, const It xend, const It ybegin) {
     norm_y += y * y;
   }
 
-  if (norm_x == 0 && norm_y == 0) {
-    return 0;
-  }
-
-  if (norm_x == 0 || norm_y == 0 || result <= 0) {
-    return std::numeric_limits<Out>::max();
-  }
-  return std::log2(std::sqrt(norm_x * norm_y) / result);
+  return finish_alternative_cosine(result, norm_x, norm_y);
 }
 
 template <typename Out, typename It> Out dice(It xbegin, It xend, It ybegin) {
@@ -186,6 +216,25 @@ template <typename Out, typename It> Out dice(It xbegin, It xend, It ybegin) {
   return num_not_equal / static_cast<Out>(2 * num_true_true + num_not_equal);
 }
 
+// Keep the scalar and batched dot-product kernels on the same distance scale.
+template <typename Out> Out finish_inner_product(Out similarity) {
+  return std::max(Out{1} - similarity, Out{0});
+}
+
+template <typename Out> Out finish_dot(Out similarity) {
+  if (similarity <= 0) {
+    return 1;
+  }
+  return finish_inner_product(similarity);
+}
+
+template <typename Out> Out finish_alternative_dot(Out similarity) {
+  if (similarity <= 0) {
+    return std::numeric_limits<Out>::max();
+  }
+  return std::max(-std::log2(similarity), Out{0});
+}
+
 template <typename Out, typename It>
 Out dot(const It xbegin, const It xend, const It ybegin) {
   Out result = 0;
@@ -193,10 +242,7 @@ Out dot(const It xbegin, const It xend, const It ybegin) {
     result += (*xit) * (*yit);
   }
 
-  if (result <= 0) {
-    return 1;
-  }
-  return 1 - result;
+  return finish_dot(result);
 }
 
 template <typename Out, typename It>
@@ -206,10 +252,7 @@ Out alternative_dot(const It xbegin, const It xend, const It ybegin) {
     result += (*xit) * (*yit);
   }
 
-  if (result <= 0) {
-    return std::numeric_limits<Out>::max();
-  }
-  return -std::log2(result);
+  return finish_alternative_dot(result);
 }
 
 template <typename Out, typename It>
@@ -237,8 +280,8 @@ Out haversine(const It xbegin, const It xend, const It ybegin) {
 
   const Out sin_lat = std::sin(static_cast<Out>(0.5) * (lat1 - lat2));
   const Out sin_lon = std::sin(static_cast<Out>(0.5) * (lon1 - lon2));
-  const Out a = sin_lat * sin_lat +
-                std::cos(lat1) * std::cos(lat2) * sin_lon * sin_lon;
+  const Out a =
+      sin_lat * sin_lat + std::cos(lat1) * std::cos(lat2) * sin_lon * sin_lon;
   const Out clamped = std::clamp(a, Out{0}, Out{1});
   return static_cast<Out>(2) * std::asin(std::sqrt(clamped));
 }
@@ -255,13 +298,7 @@ Out hellinger(const It xbegin, const It xend, const It ybegin) {
     l1_norm_y += *yit;
   }
 
-  if (l1_norm_x == 0 && l1_norm_y == 0) {
-    return 0;
-  }
-  if (l1_norm_x == 0 || l1_norm_y == 0) {
-    return 1;
-  }
-  return std::sqrt(1 - result / std::sqrt(l1_norm_x * l1_norm_y));
+  return finish_hellinger(result, l1_norm_x, l1_norm_y);
 }
 
 template <typename Out, typename It>
@@ -276,15 +313,7 @@ Out alternative_hellinger(const It xbegin, const It xend, const It ybegin) {
     l1_norm_y += *yit;
   }
 
-  constexpr Out FLOAT_MAX = std::numeric_limits<Out>::max();
-
-  if (l1_norm_x == 0 && l1_norm_y == 0) {
-    return 0;
-  }
-  if (l1_norm_x == 0 || l1_norm_y == 0 || result <= 0) {
-    return FLOAT_MAX;
-  }
-  return std::log2(std::sqrt(l1_norm_x * l1_norm_y) / result);
+  return finish_log_normalized_product(result, l1_norm_x, l1_norm_y);
 }
 
 template <typename Out, typename It>
@@ -293,7 +322,7 @@ Out inner_product(const It xbegin, const It xend, const It ybegin) {
   for (It xit = xbegin, yit = ybegin; xit != xend; ++xit, ++yit) {
     sum += *xit * *yit;
   }
-  return std::max(1 - sum, Out{0});
+  return finish_inner_product(sum);
 }
 
 template <typename Out, typename It>
@@ -335,12 +364,13 @@ Out alternative_jaccard(It xbegin, It xend, It ybegin) {
 }
 
 template <typename Out, typename It>
-Out jensen_shannon_divergence(It xbegin, It xend, It ybegin) {
-  const std::size_t ndim = std::distance(xbegin, xend);
+Out jensen_shannon_divergence_impl(It xbegin, It xend, It ybegin,
+                                   std::size_t ndim) {
+  const std::size_t support_size = std::distance(xbegin, xend);
   Out l1_norm_x = 0;
   Out l1_norm_y = 0;
 
-  for (std::size_t i = 0; i < ndim; ++i) {
+  for (std::size_t i = 0; i < support_size; ++i) {
     l1_norm_x += std::abs(*(xbegin + i));
     l1_norm_y += std::abs(*(ybegin + i));
   }
@@ -350,7 +380,12 @@ Out jensen_shannon_divergence(It xbegin, It xend, It ybegin) {
   l1_norm_y += EPS * ndim;
 
   Out result = 0.0;
-  for (std::size_t i = 0; i < ndim; ++i) {
+  std::size_t common_zeros = ndim - support_size;
+  for (std::size_t i = 0; i < support_size; ++i) {
+    if (*(xbegin + i) == 0 && *(ybegin + i) == 0) {
+      ++common_zeros;
+      continue;
+    }
     const Out xi = *(xbegin + i) + EPS;
     const Out yi = *(ybegin + i) + EPS;
     const Out xil1 = xi / l1_norm_x;
@@ -358,15 +393,28 @@ Out jensen_shannon_divergence(It xbegin, It xend, It ybegin) {
 
     const Out m = 0.5 * (xil1 + yil1);
 
-    if (xi > EPS) {
-      result += 0.5 * xil1 * std::log(xil1 / m);
-    }
-    if (yi > EPS) {
-      result += 0.5 * yil1 * std::log(yil1 / m);
-    }
+    result += 0.5 * xil1 * std::log(xil1 / m);
+    result += 0.5 * yil1 * std::log(yil1 / m);
+  }
+
+  // Count common zeros in both representations to keep their rounding aligned.
+  if (common_zeros > 0) {
+    const Out pdf_x0 = EPS / l1_norm_x;
+    const Out pdf_y0 = EPS / l1_norm_y;
+    const Out m0 = 0.5 * (pdf_x0 + pdf_y0);
+    Out zero_contribution = 0;
+    zero_contribution += 0.5 * pdf_x0 * std::log(pdf_x0 / m0);
+    zero_contribution += 0.5 * pdf_y0 * std::log(pdf_y0 / m0);
+    result += common_zeros * zero_contribution;
   }
 
   return result;
+}
+
+template <typename Out, typename It>
+Out jensen_shannon_divergence(It xbegin, It xend, It ybegin) {
+  return jensen_shannon_divergence_impl<Out>(xbegin, xend, ybegin,
+                                             std::distance(xbegin, xend));
 }
 
 template <typename Out, typename It>
@@ -486,24 +534,49 @@ Out spearmanr(It xbegin, It xend, It ybegin) {
   return correlation<Out>(x_rank.begin(), x_rank.end(), y_rank.begin());
 }
 
-template <typename Out, typename It>
-Out squared_euclidean(const It xbegin, const It xend, const It ybegin) {
-  Out sum = 0;
-  for (It xit = xbegin, yit = ybegin; xit != xend; ++xit, ++yit) {
-    const auto diff = *xit - *yit;
-    sum += diff * diff;
+inline constexpr int feature_sum_width = 8;
+
+// Independent partial sums let ordinary C++ optimizers vectorize across
+// features. Scalar and batched callers use the same reduction order.
+template <typename Out, typename It, typename OtherIt, typename Product>
+Out sum_feature_products(It x, It end, OtherIt y, Out initial,
+                         Product product) {
+  using Category = typename std::iterator_traits<It>::iterator_category;
+  if constexpr (std::is_base_of_v<std::random_access_iterator_tag, Category>) {
+    constexpr auto width = feature_sum_width;
+    if (end - x >= width) {
+      std::array<Out, width> sums{};
+      do {
+        for (auto &sum : sums) {
+          sum += product(*x++, *y++);
+        }
+      } while (end - x >= width);
+      initial = std::accumulate(sums.begin(), sums.end(), initial);
+    }
   }
-  return sum;
+  for (; x != end; ++x, ++y) {
+    initial += product(*x, *y);
+  }
+  return initial;
 }
 
 template <typename Out, typename It>
-Out symmetric_kl_divergence(It xbegin, It xend, It ybegin) {
-  const std::size_t ndim = std::distance(xbegin, xend);
+Out squared_euclidean(const It xbegin, const It xend, const It ybegin) {
+  return sum_feature_products(xbegin, xend, ybegin, Out{0}, [](auto x, auto y) {
+    const auto diff = x - y;
+    return diff * diff;
+  });
+}
+
+template <typename Out, typename It>
+Out symmetric_kl_divergence_impl(It xbegin, It xend, It ybegin,
+                                 std::size_t ndim) {
+  const std::size_t support_size = std::distance(xbegin, xend);
   Out l1_norm_x = 0;
   Out l1_norm_y = 0;
 
   // First pass to calculate L1 norms
-  for (std::size_t i = 0; i < ndim; ++i) {
+  for (std::size_t i = 0; i < support_size; ++i) {
     l1_norm_x += std::abs(*(xbegin + i));
     l1_norm_y += std::abs(*(ybegin + i));
   }
@@ -513,21 +586,36 @@ Out symmetric_kl_divergence(It xbegin, It xend, It ybegin) {
   l1_norm_y += EPS * ndim;
 
   Out result = 0;
-  for (std::size_t i = 0; i < ndim; ++i) {
+  std::size_t common_zeros = ndim - support_size;
+  for (std::size_t i = 0; i < support_size; ++i) {
+    if (*(xbegin + i) == 0 && *(ybegin + i) == 0) {
+      ++common_zeros;
+      continue;
+    }
     const auto xi = *(xbegin + i) + EPS;
     const auto yi = *(ybegin + i) + EPS;
     const auto pdf_xi = xi / l1_norm_x;
     const auto pdf_yi = yi / l1_norm_y;
 
-    if (pdf_xi > EPS) {
-      result += pdf_xi * std::log(pdf_xi / pdf_yi);
-    }
-    if (pdf_yi > EPS) {
-      result += pdf_yi * std::log(pdf_yi / pdf_xi);
-    }
+    result += (pdf_xi - pdf_yi) * std::log(pdf_xi / pdf_yi);
+  }
+
+  // Count common zeros in both representations to keep their rounding aligned.
+  if (common_zeros > 0) {
+    const auto pdf_x0 = EPS / l1_norm_x;
+    const auto pdf_y0 = EPS / l1_norm_y;
+    const auto zero_contribution =
+        (pdf_x0 - pdf_y0) * std::log(pdf_x0 / pdf_y0);
+    result += common_zeros * zero_contribution;
   }
 
   return result;
+}
+
+template <typename Out, typename It>
+Out symmetric_kl_divergence(It xbegin, It xend, It ybegin) {
+  return symmetric_kl_divergence_impl<Out>(xbegin, xend, ybegin,
+                                           std::distance(xbegin, xend));
 }
 
 template <typename Out, typename It>
@@ -545,13 +633,12 @@ Out true_angular(It xbegin, It xend, It ybegin) {
   if (norm_x == 0 && norm_y == 0) {
     return 0;
   }
-  if (norm_x == 0 || norm_y == 0 || result <= 0) {
-    return std::numeric_limits<Out>::max();
+  if (norm_x == 0 || norm_y == 0) {
+    return Out{0.5};
   }
   result /= std::sqrt(norm_x) * std::sqrt(norm_y);
   result = std::clamp(result, Out{-1}, Out{1});
-  result = std::acos(result) / pi_v<Out>;
-  return 1 - result;
+  return std::acos(result) / pi_v<Out>;
 }
 
 template <typename Out, typename It> Out tsss(It xbegin, It xend, It ybegin) {
@@ -568,6 +655,10 @@ template <typename Out, typename It> Out tsss(It xbegin, It xend, It ybegin) {
     norm_y += *yit * *yit;
   }
 
+  if (norm_x == 0 || norm_y == 0) {
+    return 0;
+  }
+
   norm_x = std::sqrt(norm_x);
   norm_y = std::sqrt(norm_y);
   Out magnitude_difference = std::abs(norm_x - norm_y);
@@ -575,7 +666,8 @@ template <typename Out, typename It> Out tsss(It xbegin, It xend, It ybegin) {
   // very real chance of d_cos being outside [-1, 1] range and causing acos
   // to give a NaN when comparing a point with itself
   d_cos = std::clamp(d_cos, Out{-1}, Out{1});
-  Out theta = std::acos(d_cos) + (pi_v<Out> / 18.0); // Add 10 degrees in radians
+  Out theta =
+      std::acos(d_cos) + (pi_v<Out> / 18.0); // Add 10 degrees in radians
 
   Out sector =
       std::pow((std::sqrt(d_euc_squared) + magnitude_difference), 2) * theta;

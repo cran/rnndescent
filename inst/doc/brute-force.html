@@ -351,6 +351,10 @@ course very slow. That said as it can be easily parallelized, you can
 get a surprisingly long way with it, especially if you only need the
 k-nearest neighbors and won’t be running a neighbor search multiple
 times.</p>
+<p>Here, “exact” refers to exhaustive search. Distance calculations
+still have the <a href="metrics.html#numerical-precision">numerical
+precision and range limitations</a> described in the metrics
+vignette.</p>
 <p>Let’s calculate the exact 15 nearest neighbors for the
 <code>iris</code> dataset:</p>
 <div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>iris_nbrs <span class="ot">&lt;-</span> <span class="fu">brute_force_knn</span>(iris, <span class="at">k =</span> <span class="dv">15</span>)</span>
@@ -368,9 +372,9 @@ times.</p>
 <span id="cb2-13"><a href="#cb2-13" tabindex="-1"></a><span class="co">#&gt; [1,]    0 0.1000000 0.1414212 0.1414212 0.1414213</span></span>
 <span id="cb2-14"><a href="#cb2-14" tabindex="-1"></a><span class="co">#&gt; [2,]    0 0.1414213 0.1414213 0.1414213 0.1732050</span></span>
 <span id="cb2-15"><a href="#cb2-15" tabindex="-1"></a><span class="co">#&gt; [3,]    0 0.1414213 0.2449490 0.2645751 0.2645753</span></span></code></pre></div>
-<p>And here’s an example of querying the odd items in the
-<code>iris</code> data against the even items (i.e. the indices in
-<code>iris_nbrs</code> will refer to the odd items):</p>
+<p>And here’s an example of querying the even items in the
+<code>iris</code> data against the odd items. The indices in
+<code>iris_query_nbrs</code> refer to rows of <code>iris_odd</code>:</p>
 <div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>iris_even <span class="ot">&lt;-</span> iris[<span class="fu">seq_len</span>(<span class="fu">nrow</span>(iris)) <span class="sc">%%</span> <span class="dv">2</span> <span class="sc">==</span> <span class="dv">0</span>, ]</span>
 <span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>iris_odd <span class="ot">&lt;-</span> iris[<span class="fu">seq_len</span>(<span class="fu">nrow</span>(iris)) <span class="sc">%%</span> <span class="dv">2</span> <span class="sc">==</span> <span class="dv">1</span>, ]</span>
 <span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>iris_query_nbrs <span class="ot">&lt;-</span></span>

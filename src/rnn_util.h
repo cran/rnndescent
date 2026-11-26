@@ -63,8 +63,7 @@ auto graph_to_r(const tdoann::NNGraph<Out, Idx> &graph, bool unzero = false)
     }
   }
 
-  return Rcpp::List::create(Rcpp::_("idx") = indices,
-                            Rcpp::_("dist") = dist);
+  return Rcpp::List::create(Rcpp::_("idx") = indices, Rcpp::_("dist") = dist);
 }
 
 template <typename T>
@@ -84,13 +83,16 @@ auto r_to_vec(const Rcpp::NumericMatrix &data) -> std::vector<T> {
 
 template <typename T>
 auto r_to_vec(const Rcpp::LogicalMatrix &data) -> std::vector<T> {
-  size_t n = data.nrow() * data.ncol();
   std::vector<T> vec;
-  vec.reserve(n);
+  vec.reserve(data.size());
 
   for (int j = 0; j < data.ncol(); ++j) {
     for (int i = 0; i < data.nrow(); ++i) {
-      vec.push_back(data(i, j) == NA_LOGICAL ? 0 : static_cast<T>(data(i, j)));
+      const auto value = data(i, j);
+      if (value == NA_LOGICAL) {
+        Rcpp::stop("Logical feature values must not be NA");
+      }
+      vec.push_back(static_cast<T>(value));
     }
   }
 
@@ -112,7 +114,7 @@ inline auto r_to_idx(const Rcpp::IntegerMatrix &nn_idx,
   // don't use Rcpp::as because we may need to static cast missing value -1 to
   // the equivalent unsigned (very large) value
   std::vector<Int> idx_vec;
-  idx_vec.reserve(nn_idx_copy.nrow() * nn_idx_copy.ncol());
+  idx_vec.reserve(nn_idx_copy.size());
   for (int i = 0; i < nn_idx_copy.ncol(); ++i) {
     for (int j = 0; j < nn_idx_copy.nrow(); ++j) {
       idx_vec.push_back(static_cast<Int>(nn_idx_copy(j, i)));
@@ -141,7 +143,7 @@ inline auto r_to_idxt(const Rcpp::IntegerMatrix &nn_idx,
   nn_idx_copy = Rcpp::transpose(nn_idx_copy);
 
   std::vector<Int> idx_vec;
-  idx_vec.reserve(nn_idx_copy.nrow() * nn_idx_copy.ncol());
+  idx_vec.reserve(nn_idx_copy.size());
   for (int i = 0; i < nn_idx_copy.ncol(); ++i) {
     for (int j = 0; j < nn_idx_copy.nrow(); ++j) {
       idx_vec.push_back(static_cast<Int>(nn_idx_copy(j, i)));
@@ -181,21 +183,6 @@ auto sparse_graph_to_r(const SparseNNGraph &sparse_graph) -> Rcpp::List {
   return Rcpp::List::create(Rcpp::_("row_ptr") = sparse_graph.row_ptr,
                             Rcpp::_("col_idx") = sparse_graph.col_idx,
                             Rcpp::_("dist") = sparse_graph.dist);
-}
-
-inline std::vector<uint8_t> r_to_binvec(const Rcpp::LogicalMatrix &data) {
-  size_t n = data.nrow() * data.ncol();
-  std::vector<uint8_t> vec;
-  vec.reserve(n);
-
-  for (int j = 0; j < data.ncol(); ++j) {
-    for (int i = 0; i < data.nrow(); ++i) {
-      vec.push_back(
-          data(i, j) == NA_LOGICAL ? 0 : static_cast<uint8_t>(data(i, j)));
-    }
-  }
-
-  return vec;
 }
 
 #endif // RNN_UTIL_H

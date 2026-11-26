@@ -41,13 +41,14 @@ struct RPProgress : public tdoann::ProgressBase {
   double iter_increment{scale};  // Amount progress increases per iteration
   double batch_increment{scale}; // Amount progress increases per batch
 
-  virtual ~RPProgress() = default;
+  ~RPProgress() override = default;
 
   RPProgress(bool verbose) : progress(scale, verbose), verbose(verbose) {}
 
   RPProgress(uint32_t n_iters, bool verbose)
       : progress(scale, verbose), verbose(verbose),
-        iter_increment(static_cast<double>(scale) / n_iters) {}
+        iter_increment(n_iters == 0 ? 0.0
+                                    : static_cast<double>(scale) / n_iters) {}
 
   RPProgress(RPProgress &&other) noexcept
       : progress(std::move(other.progress)), verbose(other.verbose),
@@ -69,7 +70,7 @@ struct RPProgress : public tdoann::ProgressBase {
   }
 
   void set_n_iters(uint32_t n_iters) override {
-    iter_increment = static_cast<double>(scale) / n_iters;
+    iter_increment = n_iters == 0 ? 0.0 : static_cast<double>(scale) / n_iters;
   }
 
   void set_n_batches(uint32_t n_batches) override {
@@ -106,7 +107,7 @@ struct RPProgress : public tdoann::ProgressBase {
     } catch (Rcpp::internal::InterruptedException &) {
       is_aborted = true;
       stopping_early();
-      return true;
+      throw;
     }
     return false;
   }
@@ -124,9 +125,9 @@ struct RPProgress : public tdoann::ProgressBase {
 
 struct RInterruptableProgress : public tdoann::ProgressBase {
   bool is_aborted{false};
-  bool verbose;
+  bool verbose{false};
 
-  virtual ~RInterruptableProgress() = default;
+  ~RInterruptableProgress() override = default;
 
   RInterruptableProgress() = default;
   RInterruptableProgress(uint32_t /* n_iters */, bool verbose)
@@ -160,7 +161,7 @@ struct RInterruptableProgress : public tdoann::ProgressBase {
     } catch (Rcpp::internal::InterruptedException &) {
       is_aborted = true;
       stopping_early();
-      return true;
+      throw;
     }
     return false;
   }
@@ -172,13 +173,13 @@ struct RIterProgress : public RInterruptableProgress {
   uint32_t n_iters;
   uint32_t iter{0};
 
-  virtual ~RIterProgress() = default;
+  ~RIterProgress() override = default;
 
   RIterProgress(uint32_t n_iters, bool verbose)
       : RInterruptableProgress(n_iters, verbose), n_iters(n_iters) {}
   RIterProgress(RIterProgress &&other) noexcept
-      : RInterruptableProgress(std::move(other)),
-        n_iters(other.n_iters), iter(other.iter) {
+      : RInterruptableProgress(std::move(other)), n_iters(other.n_iters),
+        iter(other.iter) {
 
     other.n_iters = 0;
     other.iter = 0;

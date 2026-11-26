@@ -19,18 +19,25 @@
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers,modernize-use-trailing-return-type,readability-magic-numbers)
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <iomanip>
 #include <sstream>
+#include <type_traits>
+#include <utility>
+#include <variant>
 
 #include <Rcpp.h>
 
 #include "tdoann/search.h"
 
 #include "rnn_distance.h"
+#include "rnn_distance_batch.h"
 #include "rnn_heaptor.h"
 #include "rnn_init.h"
 #include "rnn_parallel.h"
+#include "rnn_prepared_index.h"
 #include "rnn_progress.h"
 #include "rnn_rtoheap.h"
 
@@ -47,14 +54,16 @@ std::string fmt_double(double d, int precision = 2) {
   return oss.str();
 }
 
-template <typename Out, typename Idx>
+template <typename Out, typename Idx, typename CalculateFour = std::nullptr_t,
+          typename PrepareTraversal = std::nullptr_t>
 List nn_query_impl(const tdoann::BaseDistance<Out, Idx> &distance,
-                   const List &reference_graph_list,
+                   const tdoann::SparseAdjacency<Idx> &search_graph,
                    const IntegerMatrix &nn_idx, const NumericMatrix &nn_dist,
-                   const std::string &metric, double epsilon,
-                   double max_search_fraction, std::size_t n_threads,
-                   bool verbose) {
-  const auto search_graph = r_to_sparse_graph<Out, Idx>(reference_graph_list);
+                   double epsilon, double max_search_fraction,
+                   std::size_t n_threads, bool verbose,
+                   const CalculateFour &calculate_four = nullptr,
+                   const PrepareTraversal &prepare_traversal = nullptr,
+                   RandomFill fill = RandomFill::permutation) {
   auto nn_heap = r_to_query_heap<tdoann::NNHeap<Out, Idx>>(nn_idx, nn_dist);
 
   auto max_distance_calculations =
@@ -66,7 +75,10 @@ List nn_query_impl(const tdoann::BaseDistance<Out, Idx> &distance,
   }
   // replace missing data with randomly chosen neighbors so all points have
   // k initial guesses
-  fill_random(nn_heap, distance, n_threads, verbose);
+  fill_random(nn_heap, distance, n_threads, verbose, fill);
+  if constexpr (!std::is_same_v<PrepareTraversal, std::nullptr_t>) {
+    prepare_traversal();
+  }
 
   std::vector<std::size_t> distance_counts(nn_heap.n_points, 0);
 
@@ -74,7 +86,7 @@ List nn_query_impl(const tdoann::BaseDistance<Out, Idx> &distance,
   RPProgress progress(verbose);
   tdoann::nn_query(search_graph, nn_heap, distance, epsilon,
                    max_distance_calculations, distance_counts, n_threads,
-                   progress, executor);
+                   progress, executor, calculate_four);
 
   if (verbose) {
     std::size_t min_count = 0UL;
@@ -95,9 +107,9 @@ List nn_query_impl(const tdoann::BaseDistance<Out, Idx> &distance,
       sum_counts += count;
     }
     double avg_count = distance_counts.empty()
-      ? 0.0
-      : static_cast<double>(sum_counts) /
-          static_cast<double>(distance_counts.size());
+                           ? 0.0
+                           : static_cast<double>(sum_counts) /
+                                 static_cast<double>(distance_counts.size());
 
     tsmessage() << "min distance calculation = " << min_count << " ("
                 << fmt_double(100.0 * min_count / n_points)
@@ -113,16 +125,421 @@ List nn_query_impl(const tdoann::BaseDistance<Out, Idx> &distance,
   return heap_to_r(nn_heap, n_threads, progress, executor);
 }
 
+template <typename Out, typename Idx, typename CalculateFour = std::nullptr_t,
+          typename PrepareTraversal = std::nullptr_t>
+List nn_query_impl(const tdoann::BaseDistance<Out, Idx> &distance,
+                   const List &graph, const IntegerMatrix &nn_idx,
+                   const NumericMatrix &nn_dist, double epsilon,
+                   double max_search_fraction, std::size_t n_threads,
+                   bool verbose, const CalculateFour &calculate_four = nullptr,
+                   const PrepareTraversal &prepare_traversal = nullptr,
+                   RandomFill fill = RandomFill::permutation) {
+  return nn_query_impl(distance, r_to_sparse_graph<Out, Idx>(graph), nn_idx,
+                       nn_dist, epsilon, max_search_fraction, n_threads,
+                       verbose, calculate_four, prepare_traversal, fill);
+}
+
+template <rnndescent::DenseBatchMetric Metric, typename Graph>
+List dense_query_four_impl(
+    const tdoann::VectorDistance<RNN_DEFAULT_IN, RNN_DEFAULT_DIST,
+                                 RNN_DEFAULT_IDX> &distance,
+    const Graph &graph, const IntegerMatrix &nn_idx,
+    const NumericMatrix &nn_dist, std::size_t dimension, double epsilon,
+    double max_search_fraction, std::size_t n_threads, bool verbose) {
+  using Kernel =
+      rnndescent::DenseDistanceFour<RNN_DEFAULT_DIST, RNN_DEFAULT_IDX>;
+  const auto *data = &*distance.get_x(0);
+  auto calculate_four = [&](RNN_DEFAULT_IDX row,
+                            const Kernel::Targets &targets) {
+    return Kernel::run_from<Metric>(&*distance.get_y(row), data, dimension,
+                                    targets);
+  };
+  return nn_query_impl(distance, graph, nn_idx, nn_dist, epsilon,
+                       max_search_fraction, n_threads, verbose, calculate_four);
+}
+
+namespace {
+
+using QueryDistance =
+    tdoann::VectorDistance<RNN_DEFAULT_IN, RNN_DEFAULT_DIST, RNN_DEFAULT_IDX>;
+using QueryKernel =
+    rnndescent::DenseDistanceFour<RNN_DEFAULT_DIST, RNN_DEFAULT_IDX>;
+using EvaluateFour = decltype(&QueryKernel::run_from<
+                              rnndescent::DenseBatchMetric::inner_product>);
+
+struct SharedQueryFour {
+  const QueryDistance &distance;
+  const float *reference;
+  std::size_t dimension;
+  EvaluateFour evaluate;
+
+  auto operator()(RNN_DEFAULT_IDX row,
+                  const QueryKernel::Targets &targets) const
+      -> QueryKernel::Distances {
+    return evaluate(&*distance.get_y(row), reference, dimension, targets);
+  }
+};
+
+enum class QueryProductMetric {
+  cosine,
+  alternative_cosine,
+  correlation,
+  hellinger,
+  alternative_hellinger
+};
+
+template <QueryProductMetric Metric>
+auto query_product_four(const float *x, const float *data,
+                        std::size_t dimension,
+                        const QueryKernel::Targets &targets)
+    -> QueryKernel::Distances {
+  constexpr bool centered = Metric == QueryProductMetric::correlation;
+  constexpr bool probability =
+      Metric == QueryProductMetric::hellinger ||
+      Metric == QueryProductMetric::alternative_hellinger;
+  std::array<const float *, 4> ys;
+  for (std::size_t lane = 0; lane < ys.size(); ++lane) {
+    ys[lane] = data + dimension * targets[lane];
+  }
+  float x_mean = 0;
+  QueryKernel::Distances y_mean{};
+  if constexpr (centered) {
+    for (std::size_t j = 0; j < dimension; ++j) {
+      x_mean += x[j];
+      for (std::size_t lane = 0; lane < ys.size(); ++lane) {
+        y_mean[lane] += ys[lane][j];
+      }
+    }
+    x_mean /= dimension;
+    for (auto &mean : y_mean) {
+      mean /= dimension;
+    }
+  }
+
+  // Accumulate the query norm once for all four candidates.
+  float x_norm = 0;
+  QueryKernel::Distances y_norm{}, product{};
+  for (std::size_t j = 0; j < dimension; ++j) {
+    const float xj = centered ? x[j] - x_mean : x[j];
+    x_norm += probability ? xj : xj * xj;
+    for (std::size_t lane = 0; lane < ys.size(); ++lane) {
+      const float yj = centered ? ys[lane][j] - y_mean[lane] : ys[lane][j];
+      const float xy = xj * yj;
+      y_norm[lane] += probability ? yj : yj * yj;
+      product[lane] += probability ? std::sqrt(xy) : xy;
+    }
+  }
+
+  QueryKernel::Distances result{};
+  for (std::size_t lane = 0; lane < ys.size(); ++lane) {
+    const float yn = y_norm[lane];
+    const float dot = product[lane];
+    if constexpr (Metric == QueryProductMetric::cosine) {
+      result[lane] = tdoann::finish_cosine(dot, x_norm, yn);
+    } else if constexpr (Metric == QueryProductMetric::alternative_cosine) {
+      result[lane] = tdoann::finish_alternative_cosine(dot, x_norm, yn);
+    } else if constexpr (Metric == QueryProductMetric::correlation) {
+      result[lane] = tdoann::finish_correlation(dot, x_norm, yn);
+    } else if constexpr (Metric == QueryProductMetric::hellinger) {
+      result[lane] = tdoann::finish_hellinger(dot, x_norm, yn);
+    } else {
+      result[lane] = tdoann::finish_log_normalized_product(dot, x_norm, yn);
+    }
+  }
+  return result;
+}
+
+enum class QueryCoordinateMetric { bray_curtis, canberra, chebyshev };
+
+template <QueryCoordinateMetric Metric>
+auto query_coordinate_four(const float *x, const float *data,
+                           std::size_t dimension,
+                           const QueryKernel::Targets &targets)
+    -> QueryKernel::Distances {
+  std::array<const float *, 4> candidates;
+  for (std::size_t lane = 0; lane < candidates.size(); ++lane) {
+    candidates[lane] = data + dimension * targets[lane];
+  }
+  QueryKernel::Distances result{};
+  QueryKernel::Distances denominator{};
+  for (std::size_t j = 0; j < dimension; ++j) {
+    const auto anchor = x[j];
+    for (std::size_t lane = 0; lane < candidates.size(); ++lane) {
+      const auto other = candidates[lane][j];
+      const auto difference = std::abs(anchor - other);
+      if constexpr (Metric == QueryCoordinateMetric::bray_curtis) {
+        result[lane] += difference;
+        denominator[lane] += std::abs(anchor + other);
+      } else if constexpr (Metric == QueryCoordinateMetric::canberra) {
+        const auto scale = std::abs(anchor) + std::abs(other);
+        if (scale > 0) {
+          result[lane] += difference / scale;
+        }
+      } else {
+        result[lane] = std::max(result[lane], difference);
+      }
+    }
+  }
+  if constexpr (Metric == QueryCoordinateMetric::bray_curtis) {
+    for (std::size_t lane = 0; lane < candidates.size(); ++lane) {
+      result[lane] =
+          denominator[lane] == 0 ? 0 : result[lane] / denominator[lane];
+    }
+  }
+  return result;
+}
+
+auto shared_query_kernel(const std::string &metric) -> EvaluateFour {
+  if (metric == "braycurtis") {
+    return query_coordinate_four<QueryCoordinateMetric::bray_curtis>;
+  }
+  if (metric == "canberra") {
+    return query_coordinate_four<QueryCoordinateMetric::canberra>;
+  }
+  if (metric == "chebyshev") {
+    return query_coordinate_four<QueryCoordinateMetric::chebyshev>;
+  }
+  using Metric = rnndescent::DenseBatchMetric;
+  if (metric == "cosine") {
+    return query_product_four<QueryProductMetric::cosine>;
+  }
+  if (metric == "alternative-cosine") {
+    return query_product_four<QueryProductMetric::alternative_cosine>;
+  }
+  if (metric == "correlation") {
+    return query_product_four<QueryProductMetric::correlation>;
+  }
+  if (metric == "hellinger") {
+    return query_product_four<QueryProductMetric::hellinger>;
+  }
+  if (metric == "alternative-hellinger") {
+    return query_product_four<QueryProductMetric::alternative_hellinger>;
+  }
+  if (metric == "manhattan") {
+    return QueryKernel::run_from<Metric::manhattan>;
+  }
+  if (metric == "cosine-preprocess" || metric == "correlation-preprocess") {
+    return QueryKernel::run_from<Metric::inner_product>;
+  }
+  if (metric == "dot") {
+    return QueryKernel::run_from<Metric::dot>;
+  }
+  if (metric == "alternative-dot") {
+    return QueryKernel::run_from<Metric::alternative_dot>;
+  }
+  return nullptr;
+}
+
+} // namespace
+
+template <typename Graph>
+List dense_query_impl(
+    const tdoann::VectorDistance<RNN_DEFAULT_IN, RNN_DEFAULT_DIST,
+                                 RNN_DEFAULT_IDX> &distance,
+    const Graph &graph, const IntegerMatrix &nn_idx,
+    const NumericMatrix &nn_dist, const std::string &metric,
+    std::size_t dimension, double epsilon, double max_search_fraction,
+    std::size_t n_threads, bool verbose,
+    RandomFill fill = RandomFill::permutation) {
+  if (metric == "sqeuclidean" && distance.get_nx() >= 4) {
+    return dense_query_four_impl<
+        rnndescent::DenseBatchMetric::squared_euclidean>(
+        distance, graph, nn_idx, nn_dist, dimension, epsilon,
+        max_search_fraction, n_threads, verbose);
+  }
+  if (const auto evaluate = shared_query_kernel(metric);
+      evaluate && distance.get_nx() >= 4) {
+    const SharedQueryFour calculate_four{distance, &*distance.get_x(0),
+                                         dimension, evaluate};
+    return nn_query_impl(distance, graph, nn_idx, nn_dist, epsilon,
+                         max_search_fraction, n_threads, verbose,
+                         calculate_four, nullptr, fill);
+  }
+  return nn_query_impl(distance, graph, nn_idx, nn_dist, epsilon,
+                       max_search_fraction, n_threads, verbose, nullptr,
+                       nullptr, fill);
+}
+
+namespace {
+
+template <typename Index>
+void check_prepared_query_shape(const Index &index, int ndim, uint32_t k) {
+  if (static_cast<std::size_t>(ndim) != index.ndim) {
+    Rcpp::stop("query must have the same number of features as the reference");
+  }
+  if (k == 0 || k > index.graph.n_points) {
+    Rcpp::stop("k must be a single integer between 1 and " +
+               std::to_string(index.graph.n_points));
+  }
+}
+
+auto prepared_seed_distances(const List &seeds, SEXP convert_seed_distances)
+    -> NumericMatrix {
+  const NumericMatrix distances = seeds["dist"];
+  if (convert_seed_distances == R_NilValue) {
+    return distances;
+  }
+  // Match the ordinary path's conversion to the public metric and back.
+  const Rcpp::Function convert(convert_seed_distances);
+  auto converted = Rcpp::as<NumericMatrix>(convert(distances));
+  if (converted.nrow() != distances.nrow() ||
+      converted.ncol() != distances.ncol()) {
+    Rcpp::stop("Converted seed distances must preserve their dimensions");
+  }
+  return converted;
+}
+
+template <typename Forest, typename Distance>
+auto prepared_query_seeds(const Forest &forest, const Distance &distance,
+                          uint32_t k, std::size_t n_threads, bool verbose,
+                          SEXP convert_seed_distances,
+                          std::size_t queries_per_worker = 1)
+    -> std::pair<IntegerMatrix, NumericMatrix> {
+  constexpr bool sparse =
+      std::is_same_v<Forest, rnndescent::PreparedSparseIndex::Forest>;
+  rnndescent::ParallelIntRNGAdapter<RNN_DEFAULT_IDX, rnndescent::DQIntSampler>
+      rng_provider;
+  RParallelExecutor executor;
+  RPProgress progress(verbose);
+  auto search = [&](const auto &trees) {
+    if constexpr (!sparse) {
+      return tdoann::search_forest(trees, distance, k, rng_provider, true,
+                                   n_threads, progress, executor,
+                                   queries_per_worker);
+    } else {
+      return tdoann::search_forest(trees, distance, k, rng_provider, true,
+                                   n_threads, progress, executor);
+    }
+  };
+  auto seed_heap = [&] {
+    if constexpr (sparse) {
+      return std::visit(search, forest);
+    } else {
+      return search(forest);
+    }
+  }();
+  // Keep the sorted seed order and the ordinary query's distance conversion.
+  const auto seeds = heap_to_r(seed_heap);
+  const IntegerMatrix indices = seeds["idx"];
+  return {indices, prepared_seed_distances(seeds, convert_seed_distances)};
+}
+
+} // namespace
+
+// [[Rcpp::export(rng = false)]]
+List rnn_query_prepared(SEXP handle, const NumericMatrix &query, uint32_t k,
+                        double epsilon, double max_search_fraction,
+                        std::size_t n_threads, bool verbose,
+                        SEXP convert_seed_distances) {
+  const auto &index =
+      rnndescent::prepared_index<rnndescent::PreparedDenseIndex>(
+          handle, rnndescent::prepared_index_tag());
+  check_prepared_query_shape(index, query.nrow(), k);
+  const Rcpp::RNGScope scope;
+  rnndescent::PreparedIndexQuery distance(index, query);
+  const bool dense_cosine = index.metric == "cosine";
+  const auto queries_per_worker =
+      dense_cosine ? tdoann::grouped_queries_per_worker : 1U;
+  const auto [indices, distances] =
+      prepared_query_seeds(index.forest, distance, k, n_threads, verbose,
+                           convert_seed_distances, queries_per_worker);
+  return dense_query_impl(
+      distance, index.graph, indices, distances, index.metric, index.ndim,
+      epsilon, max_search_fraction, n_threads, verbose,
+      dense_cosine ? RandomFill::shuffle_prefix : RandomFill::permutation);
+}
+
+// [[Rcpp::export(rng = false)]]
+List rnn_query_prepared_sparse(SEXP handle, const IntegerVector &query_ind,
+                               const IntegerVector &query_ptr,
+                               const NumericVector &query_data, int ndim,
+                               uint32_t k, double epsilon,
+                               double max_search_fraction,
+                               std::size_t n_threads, bool verbose,
+                               SEXP convert_seed_distances) {
+  using Index = rnndescent::PreparedSparseIndex;
+  const auto &index = rnndescent::prepared_index<Index>(
+      handle, rnndescent::prepared_sparse_index_tag());
+  check_prepared_query_shape(index, ndim, k);
+  rnndescent::check_prepared_sparse_storage(query_ind, query_ptr,
+                                            query_data.size(), ndim);
+  const Rcpp::RNGScope scope;
+  rnndescent::PreparedSparseQuery distance(index, query_ind, query_ptr,
+                                           query_data);
+  const auto [indices, distances] = prepared_query_seeds(
+      index.forest, distance, k, n_threads, verbose, convert_seed_distances);
+  // Switch the query-local kernel after seeding and random fill.
+  const auto prepare_traversal = [&] { distance.prepare_traversal(); };
+  return nn_query_impl(distance, index.graph, indices, distances, epsilon,
+                       max_search_fraction, n_threads, verbose, nullptr,
+                       prepare_traversal);
+}
+
+namespace {
+using BinaryScore =
+    tdoann::BinaryDistanceFunc<RNN_DEFAULT_DIST, RNN_DEFAULT_IDX>;
+auto binary_query_fill(BinaryScore score) -> RandomFill {
+  return score == tdoann::bjaccard<RNN_DEFAULT_DIST, RNN_DEFAULT_IDX> ||
+                 score == tdoann::balternative_jaccard<RNN_DEFAULT_DIST,
+                                                       RNN_DEFAULT_IDX>
+             ? RandomFill::sample_k
+             : RandomFill::permutation;
+}
+} // namespace
+
+// [[Rcpp::export(rng = false)]]
+List rnn_query_prepared_logical(SEXP handle, const LogicalMatrix &query,
+                                uint32_t k, double epsilon,
+                                double max_search_fraction,
+                                std::size_t n_threads, bool verbose,
+                                SEXP convert_seed_distances) {
+  using Index = rnndescent::PreparedLogicalIndex;
+  const auto &index = rnndescent::prepared_index<Index>(
+      handle, rnndescent::prepared_logical_index_tag());
+  check_prepared_query_shape(index, query.nrow(), k);
+  const Rcpp::RNGScope scope;
+  rnndescent::PreparedLogicalQuery distance(index, query);
+  const auto [indices, distances] = prepared_query_seeds(
+      index.forest, distance, k, n_threads, verbose, convert_seed_distances,
+      tdoann::grouped_queries_per_worker);
+  return nn_query_impl(distance, index.graph, indices, distances, epsilon,
+                       max_search_fraction, n_threads, verbose, nullptr,
+                       nullptr, binary_query_fill(index.calculate));
+}
+
+// The nested native search calls manage RNG state themselves.
+// [[Rcpp::export(rng = false)]]
+SEXP rnn_with_prepared_query(Rcpp::Function search) {
+  PreparedQuery distance;
+  Rcpp::XPtr<PreparedQuery> handle(&distance, false, prepared_query_tag());
+  // Clear the handle before the owning stack frame goes away, including on
+  // error.
+  struct ClearHandle {
+    SEXP ptr;
+    ~ClearHandle() { R_ClearExternalPtr(ptr); }
+  } clear{handle};
+  return search(handle);
+}
+
 // [[Rcpp::export]]
 List rnn_query(const NumericMatrix &reference, const List &reference_graph_list,
                const NumericMatrix &query, const IntegerMatrix &nn_idx,
                const NumericMatrix &nn_dist, const std::string &metric,
                double epsilon, double max_search_fraction,
-               std::size_t n_threads, bool verbose) {
-  auto distance_ptr = create_query_distance(reference, query, metric);
-  return nn_query_impl(*distance_ptr, reference_graph_list, nn_idx, nn_dist,
-                       metric, epsilon, max_search_fraction, n_threads,
-                       verbose);
+               std::size_t n_threads, bool verbose,
+               bool check_reference_during_copy = false,
+               SEXP prepared_query = R_NilValue) {
+  auto distance_ptr = take_prepared_query(prepared_query);
+  if (!distance_ptr) {
+    distance_ptr = create_query_vector_distance(reference, query, metric,
+                                                check_reference_during_copy);
+  }
+  using Distance =
+      tdoann::VectorDistance<RNN_DEFAULT_IN, RNN_DEFAULT_DIST, RNN_DEFAULT_IDX>;
+  return dense_query_impl(dynamic_cast<const Distance &>(*distance_ptr),
+                          reference_graph_list, nn_idx, nn_dist, metric,
+                          reference.nrow(), epsilon, max_search_fraction,
+                          n_threads, verbose);
 }
 
 // [[Rcpp::export]]
@@ -131,11 +548,18 @@ List rnn_logical_query(const LogicalMatrix &reference,
                        const LogicalMatrix &query, const IntegerMatrix &nn_idx,
                        const NumericMatrix &nn_dist, const std::string &metric,
                        double epsilon, double max_search_fraction,
-                       std::size_t n_threads, bool verbose) {
-  auto distance_ptr = create_query_distance(reference, query, metric);
-  return nn_query_impl(*distance_ptr, reference_graph_list, nn_idx, nn_dist,
-                       metric, epsilon, max_search_fraction, n_threads,
-                       verbose);
+                       std::size_t n_threads, bool verbose,
+                       SEXP prepared_query = R_NilValue) {
+  auto distance_ptr = take_prepared_query(prepared_query);
+  if (!distance_ptr) {
+    distance_ptr = create_query_distance(reference, query, metric);
+  }
+  return nn_query_impl(
+      *distance_ptr, reference_graph_list, nn_idx, nn_dist, epsilon,
+      max_search_fraction, n_threads, verbose, nullptr, nullptr,
+      binary_query_fill(
+          find_packed_distance_func<RNN_DEFAULT_DIST, RNN_DEFAULT_IDX>(
+              metric)));
 }
 
 // [[Rcpp::export]]
@@ -146,13 +570,15 @@ List rnn_sparse_query(
     std::size_t ndim, const List &reference_graph_list,
     const IntegerMatrix &nn_idx, const NumericMatrix &nn_dist,
     const std::string &metric, double epsilon, double max_search_fraction,
-    std::size_t n_threads, bool verbose) {
-  auto distance_ptr =
-      create_sparse_query_distance(ref_ind, ref_ptr, ref_data, query_ind,
-                                   query_ptr, query_data, ndim, metric);
+    std::size_t n_threads, bool verbose, SEXP prepared_query = R_NilValue) {
+  auto distance_ptr = take_prepared_query(prepared_query);
+  if (!distance_ptr) {
+    distance_ptr =
+        create_sparse_query_distance(ref_ind, ref_ptr, ref_data, query_ind,
+                                     query_ptr, query_data, ndim, metric);
+  }
   return nn_query_impl(*distance_ptr, reference_graph_list, nn_idx, nn_dist,
-                       metric, epsilon, max_search_fraction, n_threads,
-                       verbose);
+                       epsilon, max_search_fraction, n_threads, verbose);
 }
 
 // NOLINTEND(cppcoreguidelines-avoid-magic-numbers,modernize-use-trailing-return-type,readability-magic-numbers)

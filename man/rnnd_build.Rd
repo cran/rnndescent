@@ -38,7 +38,9 @@ or \code{\link[Matrix:sparseMatrix]{Matrix::sparseMatrix()}}. Sparse matrices sh
 format. Dataframes will be converted to \code{numerical} matrix format
 internally, so if your data columns are \code{logical} and intended to be used
 with the specialized binary \code{metric}s, you should convert it to a logical
-matrix first (otherwise you will get the slower dense numerical version).}
+matrix first (otherwise you will get the slower dense numerical version).
+Numeric feature values must be finite: \code{NA}, \code{NaN}, \code{Inf} and \code{-Inf}
+are not allowed.}
 
 \item{k}{Number of nearest neighbors to build the index for. You can specify
 a different number when running \code{rnnd_query}, but the index is calibrated
@@ -55,6 +57,8 @@ do both, then the specified version of \code{k} will take precedence.}
 \item \code{"correlation"} (1 minus the Pearson correlation)
 \item \code{"cosine"}
 \item \code{"dice"}
+\item \code{"dot"} (1 minus the normalized dot product, capped at 1;
+1 if either vector is zero)
 \item \code{"euclidean"}
 \item \code{"hamming"}
 \item \code{"haversine"} (great-circle distance for 2D latitude/longitude in
@@ -66,12 +70,16 @@ degrees are encountered)
 \item \code{"kulsinski"}
 \item \code{"sqeuclidean"} (squared Euclidean)
 \item \code{"manhattan"}
+\item \code{"matching"} (fraction of features whose zero/nonzero indicators
+differ)
 \item \code{"rogerstanimoto"}
 \item \code{"russellrao"}
 \item \code{"sokalmichener"}
 \item \code{"sokalsneath"}
 \item \code{"spearmanr"} (1 minus the Spearman rank correlation)
 \item \code{"symmetrickl"} (symmetric Kullback-Leibler divergence)
+\item \code{"trueangular"} (angle between vectors divided by pi; 0 for two zero
+vectors and 1/2 when exactly one vector is zero)
 \item \code{"tsss"} (Triangle Area Similarity-Sector Area Similarity or TS-SS
 metric)
 \item \code{"yule"}
@@ -103,12 +111,12 @@ a dense numeric vector of 0s and 1s):
 \item \code{"yule"}
 }}
 
-\item{use_alt_metric}{If \code{TRUE}, use faster metrics that maintain the
-ordering of distances internally (e.g. squared Euclidean distances if using
-\code{metric = "euclidean"}), then apply a correction at the end. Probably
-the only reason to set this to \code{FALSE} is if you suspect that some
-sort of numeric issue is occurring with your data in the alternative code
-path.}
+\item{use_alt_metric}{If \code{TRUE}, use alternative scores such as squared
+Euclidean distance internally and return distances in the requested metric.
+With \code{metric = "jaccard"} and a dense logical matrix, construction uses
+ordinary packed Jaccard.
+Queries on the resulting Jaccard index use log scoring by default.
+Set \code{use_alt_metric = FALSE} to use ordinary Jaccard for queries.}
 
 \item{init}{Name of the initialization strategy or initial \code{data} neighbor
 graph to optimize. One of:
@@ -164,8 +172,8 @@ Angular (Euclidean after normalization), explicitly calculates a hyperplane
 and offset, and then calculates the margin based on the dot product with
 the hyperplane.
 \item \code{"implicit"} calculates the distance from a point to each of the
-points defining the normal vector. The margin is calculated by comparing the
-two distances: the point is assigned to the side of the hyperplane that
+points defining the normal vector. The margin is calculated by comparing
+the two distances: the point is assigned to the side of the hyperplane that
 the normal vector point with the closest distance belongs to.
 \item \code{"auto"} (the default) picks the margin method depending on whether a
 binary-specific \code{metric} such as \code{"bhammming"} is chosen, in which case
@@ -208,8 +216,12 @@ a small improvement in accuracy. Because this incurs a small extra cost of
 counting the degree of each node, and because it tends to delay early
 convergence, by default this is \code{FALSE}.}
 
-\item{n_search_trees, }{the number of trees to keep in the search forest as
-part of index preparation. The default is \code{1}.}
+\item{n_search_trees}{The number of trees to keep for query initialization.
+The default is \code{1}. For dense numeric Euclidean data with
+\code{init = "tree"} and explicit margins, a single search tree uses balanced
+splits informed by the neighbor graph. Otherwise, the retained trees
+come from the random projection forest used for graph initialization,
+when available.}
 
 \item{pruning_degree_multiplier}{How strongly to truncate the final neighbor
 list for each item. The neighbor list of each item will be truncated to
@@ -302,7 +314,8 @@ In \emph{Proceedings of the fortieth annual ACM symposium on Theory of computing
 \doi{10.1145/1374376.1374452}.
 
 Dong, W., Moses, C., & Li, K. (2011, March).
-Efficient k-nearest neighbor graph construction for generic similarity measures.
+Efficient k-nearest neighbor graph construction for generic similarity
+measures.
 In \emph{Proceedings of the 20th international conference on World Wide Web}
 (pp. 577-586).
 ACM.
@@ -310,7 +323,8 @@ ACM.
 
 Harwood, B., & Drummond, T. (2016).
 Fanng: Fast approximate nearest neighbour graphs.
-In \emph{Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition}
+In \emph{Proceedings of the IEEE Conference on Computer Vision and Pattern
+Recognition}
 (pp. 5713-5722).
 }
 \seealso{

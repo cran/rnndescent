@@ -22,22 +22,27 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
 // CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// OF SUCH DAMAGE.
+// POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef TDOANN_RPTREEIMPLICIT_H
 #define TDOANN_RPTREEIMPLICIT_H
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <numeric>
 #include <tuple>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "distancebase.h"
 #include "heap.h"
 #include "parallel.h"
 #include "random.h"
+#include "rptreesearch.h"
 
 namespace tdoann {
 
@@ -50,7 +55,7 @@ template <typename Idx> struct RPTreeImplicit {
   std::vector<std::pair<std::size_t, std::size_t>> children = {};
   std::vector<std::vector<Idx>> indices = {};
   std::size_t leaf_size = 0;
-  std::size_t ndim;
+  std::size_t ndim = 0;
 
   RPTreeImplicit() = default;
 
@@ -188,10 +193,9 @@ distance_random_projection_split(const BaseDistance<Out, Idx> &distance,
                          indices[left_index], indices[right_index]);
 }
 
-template <typename Out, typename Idx>
+template <typename Out, typename Idx, typename Tree>
 void make_tree_recursive(const BaseDistance<Out, Idx> &distance,
-                         const std::vector<Idx> &indices,
-                         RPTreeImplicit<Idx> &tree,
+                         const std::vector<Idx> &indices, Tree &tree,
                          RandomIntGenerator<Idx> &rng, uint32_t leaf_size,
                          uint32_t max_depth) {
   if (indices.size() > leaf_size && max_depth > 0) {
@@ -216,37 +220,36 @@ void make_tree_recursive(const BaseDistance<Out, Idx> &distance,
   }
 }
 
-template <typename Out, typename Idx>
-RPTreeImplicit<Idx>
-make_dense_tree(const BaseDistance<Out, Idx> &distance, std::size_t ndim,
-                RandomIntGenerator<Idx> &rng, uint32_t leaf_size,
-                uint32_t max_tree_depth) {
+template <typename Out, typename Idx, typename Tree = RPTreeImplicit<Idx>>
+Tree make_dense_tree(const BaseDistance<Out, Idx> &distance, std::size_t ndim,
+                     RandomIntGenerator<Idx> &rng, uint32_t leaf_size,
+                     uint32_t max_tree_depth) {
   std::vector<Idx> indices(distance.get_ny());
   std::iota(indices.begin(), indices.end(), 0);
 
-  RPTreeImplicit<Idx> tree(indices.size(), leaf_size, ndim);
+  Tree tree(indices.size(), leaf_size, ndim);
 
   make_tree_recursive(distance, indices, tree, rng, leaf_size, max_tree_depth);
 
   return tree;
 }
 
-template <typename Out, typename Idx>
-std::vector<RPTreeImplicit<Idx>>
-make_forest(const BaseDistance<Out, Idx> &distance, std::size_t ndim,
-            uint32_t n_trees, uint32_t leaf_size, uint32_t max_tree_depth,
-            ParallelRandomIntProvider<Idx> &parallel_rand,
-            std::size_t n_threads, ProgressBase &progress,
-            const Executor &executor) {
-  std::vector<RPTreeImplicit<Idx>> rp_forest(n_trees);
+template <typename Out, typename Idx, typename Tree = RPTreeImplicit<Idx>>
+std::vector<Tree> make_forest(const BaseDistance<Out, Idx> &distance,
+                              std::size_t ndim, uint32_t n_trees,
+                              uint32_t leaf_size, uint32_t max_tree_depth,
+                              ParallelRandomIntProvider<Idx> &parallel_rand,
+                              std::size_t n_threads, ProgressBase &progress,
+                              const Executor &executor) {
+  std::vector<Tree> rp_forest(n_trees);
 
   parallel_rand.initialize();
 
   auto worker = [&](std::size_t begin, std::size_t end) {
     auto rng_ptr = parallel_rand.get_parallel_instance(end);
     for (auto i = begin; i < end; ++i) {
-      rp_forest[i] =
-          make_dense_tree(distance, ndim, *rng_ptr, leaf_size, max_tree_depth);
+      rp_forest[i] = make_dense_tree<Out, Idx, Tree>(distance, ndim, *rng_ptr,
+                                                     leaf_size, max_tree_depth);
     }
   };
 
@@ -268,7 +271,7 @@ template <typename Idx> struct SearchTreeImplicit {
   SearchTreeImplicit() = default;
 
   SearchTreeImplicit(std::size_t n_nodes, std::size_t n_points,
-                     std::size_t ndim, Idx lsize)
+                     std::size_t /* ndim */, Idx lsize)
       : normal_indices(n_nodes, std::make_pair(static_cast<Idx>(-1),
                                                static_cast<Idx>(-1))),
         children(n_nodes, std::make_pair(static_cast<std::size_t>(-1),
@@ -451,29 +454,10 @@ search_forest(const std::vector<SearchTreeImplicit<Idx>> &forest,
               const BaseDistance<Out, Idx> &distance, uint32_t n_nbrs,
               ParallelRandomIntProvider<Idx> &rng_provider, bool cache,
               std::size_t n_threads, ProgressBase &progress,
-              const Executor &executor) {
-  const auto n_queries = distance.get_ny();
-  NNHeap<Out, Idx> current_graph(n_queries, n_nbrs);
-
-  rng_provider.initialize();
-  auto worker = [&](std::size_t begin, std::size_t end) {
-    auto rng_ptr = rng_provider.get_parallel_instance(end);
-    for (auto i = begin; i < end; ++i) {
-      if (cache) {
-        search_forest_cache(forest, distance, static_cast<Idx>(i), *rng_ptr,
-                            current_graph);
-      } else {
-        search_forest(forest, distance, static_cast<Idx>(i), *rng_ptr,
-                      current_graph);
-      }
-    }
-  };
-
-  progress.set_n_iters(n_queries);
-  ExecutionParams exec_params(std::max(n_threads, static_cast<std::size_t>(1)));
-  dispatch_work(worker, n_queries, n_threads, exec_params, progress, executor);
-
-  return current_graph;
+              const Executor &executor, std::size_t queries_per_worker = 1) {
+  return search_forest_queries(forest, distance, n_nbrs, rng_provider, cache,
+                               n_threads, progress, executor,
+                               queries_per_worker);
 }
 
 } // namespace tdoann

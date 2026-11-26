@@ -26,7 +26,9 @@ or \code{\link[Matrix:sparseMatrix]{Matrix::sparseMatrix()}}. Sparse matrices sh
 format. Dataframes will be converted to \code{numerical} matrix format
 internally, so if your data columns are \code{logical} and intended to be used
 with the specialized binary \code{metric}s, you should convert it to a logical
-matrix first (otherwise you will get the slower dense numerical version).}
+matrix first (otherwise you will get the slower dense numerical version).
+Numeric feature values must be finite: \code{NA}, \code{NaN}, \code{Inf} and \code{-Inf}
+are not allowed.}
 
 \item{metric}{Type of distance calculation to use. One of:
 \itemize{
@@ -36,6 +38,8 @@ matrix first (otherwise you will get the slower dense numerical version).}
 \item \code{"correlation"} (1 minus the Pearson correlation)
 \item \code{"cosine"}
 \item \code{"dice"}
+\item \code{"dot"} (1 minus the normalized dot product, capped at 1;
+1 if either vector is zero)
 \item \code{"euclidean"}
 \item \code{"hamming"}
 \item \code{"haversine"} (great-circle distance for 2D latitude/longitude in
@@ -47,12 +51,16 @@ degrees are encountered)
 \item \code{"kulsinski"}
 \item \code{"sqeuclidean"} (squared Euclidean)
 \item \code{"manhattan"}
+\item \code{"matching"} (fraction of features whose zero/nonzero indicators
+differ)
 \item \code{"rogerstanimoto"}
 \item \code{"russellrao"}
 \item \code{"sokalmichener"}
 \item \code{"sokalsneath"}
 \item \code{"spearmanr"} (1 minus the Spearman rank correlation)
 \item \code{"symmetrickl"} (symmetric Kullback-Leibler divergence)
+\item \code{"trueangular"} (angle between vectors divided by pi; 0 for two zero
+vectors and 1/2 when exactly one vector is zero)
 \item \code{"tsss"} (Triangle Area Similarity-Sector Area Similarity or TS-SS
 metric)
 \item \code{"yule"}
@@ -88,12 +96,12 @@ Note that if \code{margin = "explicit"}, the metric is only used to determine
 whether an "angular" or "Euclidean" distance is used to measure the
 distance between split points in the tree.}
 
-\item{use_alt_metric}{If \code{TRUE}, use faster metrics that maintain the
-ordering of distances internally (e.g. squared Euclidean distances if using
-\code{metric = "euclidean"}). Probably the only reason to set this to \code{FALSE} is
-if you suspect that some sort of numeric issue is occurring with your data
-in the alternative code path. Only applies if the implicit \code{margin} method
-is used.}
+\item{use_alt_metric}{If \code{TRUE}, use alternative scores such as squared
+Euclidean distance internally and return distances in the requested metric.
+With \code{metric = "jaccard"} and a dense logical matrix, construction uses
+ordinary packed Jaccard.
+Queries using the resulting Jaccard forest use log scoring by default. Set
+\code{use_alt_metric = FALSE} to use ordinary Jaccard for queries. This option applies to implicit margins.}
 
 \item{n_trees}{The number of trees to use in the RP forest. A larger number
 will give more accurate results at the cost of a longer computation time.
@@ -123,8 +131,8 @@ Angular (Euclidean after normalization), explicitly calculates a hyperplane
 and offset, and then calculates the margin based on the dot product with
 the hyperplane.
 \item \code{"implicit"} calculates the distance from a point to each of the
-points defining the normal vector. The margin is calculated by comparing the
-two distances: the point is assigned to the side of the hyperplane that
+points defining the normal vector. The margin is calculated by comparing
+the two distances: the point is assigned to the side of the hyperplane that
 the normal vector point with the closest distance belongs to.
 \item \code{"auto"} (the default) picks the margin method depending on whether a
 binary-specific \code{metric} such as \code{"bhammming"} is chosen, in which case

@@ -22,12 +22,14 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
 // CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// OF SUCH DAMAGE.
+// POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef TDOANN_NNGRAPH_H
 #define TDOANN_NNGRAPH_H
 
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <mutex>
 #include <utility>
@@ -39,23 +41,18 @@
 
 namespace tdoann {
 
-template <typename Out = float, typename Idx = uint32_t> struct SparseNNGraph {
+template <typename Idx = uint32_t> struct SparseAdjacency {
   std::vector<std::size_t> row_ptr;
   std::vector<Idx> col_idx;
-  std::vector<Out> dist;
   std::size_t n_points;
 
-  SparseNNGraph(const std::vector<std::size_t> &row_ptr,
-                const std::vector<Idx> &col_idx, const std::vector<Out> &dist)
-      : row_ptr(row_ptr), col_idx(col_idx), dist(dist),
-        n_points(row_ptr.size() - 1) {}
+  SparseAdjacency(std::vector<std::size_t> row_ptr, std::vector<Idx> col_idx)
+      : row_ptr(std::move(row_ptr)), col_idx(std::move(col_idx)),
+        n_points(this->row_ptr.size() - 1) {}
 
-  using DistanceOut = Out;
   using Index = Idx;
 
   static constexpr auto npos() -> Idx { return static_cast<Idx>(-1); }
-
-  static constexpr auto zero = Out{0};
 
   auto n_nbrs(Idx idx) const -> std::size_t {
     return row_ptr[idx + 1] - row_ptr[idx];
@@ -65,13 +62,26 @@ template <typename Out = float, typename Idx = uint32_t> struct SparseNNGraph {
   auto index(Idx idx, Idx i) const -> Idx {
     return col_idx[row_ptr[idx] + static_cast<std::size_t>(i)];
   }
+};
+
+template <typename Out = float, typename Idx = uint32_t>
+struct SparseNNGraph : SparseAdjacency<Idx> {
+  std::vector<Out> dist;
+
+  SparseNNGraph(const std::vector<std::size_t> &row_ptr,
+                const std::vector<Idx> &col_idx, const std::vector<Out> &dist)
+      : SparseAdjacency<Idx>(row_ptr, col_idx), dist(dist) {}
+
+  using DistanceOut = Out;
+
+  static constexpr auto zero = Out{0};
 
   // distance of the ith non-zero nbr of idx
   auto distance(Idx idx, Idx i) const -> Out {
-    return dist[row_ptr[idx] + static_cast<std::size_t>(i)];
+    return dist[this->row_ptr[idx] + static_cast<std::size_t>(i)];
   }
   auto distance(Idx idx, Idx i) -> Out & {
-    return dist[row_ptr[idx] + static_cast<std::size_t>(i)];
+    return dist[this->row_ptr[idx] + static_cast<std::size_t>(i)];
   }
 
   void mark_for_deletion(Idx idx, Idx i) { distance(idx, i) = zero; }
@@ -93,12 +103,11 @@ template <typename Out = float, typename Idx = uint32_t> struct NNGraph {
   NNGraph(const std::vector<Idx> &idx, const std::vector<Out> &dist,
           std::size_t n_points)
       : idx(idx), dist(dist), n_points(n_points),
-        n_nbrs(idx.size() / n_points) {}
+        n_nbrs(n_points == 0 ? 0 : idx.size() / n_points) {}
 
-  NNGraph(std::vector<Idx> &&idx, std::vector<Out> &&dist,
-          std::size_t n_points)
+  NNGraph(std::vector<Idx> &&idx, std::vector<Out> &&dist, std::size_t n_points)
       : idx(std::move(idx)), dist(std::move(dist)), n_points(n_points),
-        n_nbrs(this->idx.size() / n_points) {}
+        n_nbrs(n_points == 0 ? 0 : this->idx.size() / n_points) {}
 
   NNGraph(std::size_t n_points, std::size_t n_nbrs)
       : idx(std::vector<Idx>(n_points * n_nbrs, npos())),
@@ -131,6 +140,9 @@ auto heap_to_graph(const NbrHeap &heap)
 template <typename Out, typename Idx, Out (*max_dist_func)()>
 auto heap_to_graph(NNHeap<Out, Idx, max_dist_func> &&heap)
     -> NNGraph<Out, Idx> {
+  if (heap.n_points == 0) {
+    return NNGraph<Out, Idx>(0, heap.n_nbrs);
+  }
   return NNGraph<Out, Idx>(std::move(heap.idx), std::move(heap.dist),
                            heap.n_points);
 }
@@ -154,7 +166,8 @@ struct HeapAddQuery {
 };
 
 struct LockingHeapAddSymmetric {
-  static constexpr std::size_t n_mutexes = 10;
+  // 128 seems optimal for 4-8 threads
+  static constexpr std::size_t n_mutexes = 128;
   std::array<std::mutex, n_mutexes> mutexes;
 
   template <typename NbrHeap>

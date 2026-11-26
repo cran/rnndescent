@@ -22,26 +22,54 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
 // CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// OF SUCH DAMAGE.
+// POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef TDOANN_RPTREE_H
 #define TDOANN_RPTREE_H
 
+#include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <numeric>
 #include <tuple>
+#include <type_traits>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "distancebase.h"
 #include "heap.h"
 #include "parallel.h"
 #include "random.h"
+#include "rptreesearch.h"
 
 namespace tdoann {
 
 // Tree Building
+
+// Graph initialization only needs leaf memberships in split order.
+template <typename Idx> struct RPLeafTree {
+  using Index = Idx;
+  std::vector<std::vector<Idx>> indices;
+  std::size_t leaf_size = 0;
+
+  RPLeafTree() = default;
+  RPLeafTree(std::size_t n_points, std::size_t target_size, std::size_t) {
+    indices.reserve(std::max(std::size_t{1}, n_points / target_size));
+  }
+
+  template <typename... Args> void add_node(const Args &...) {}
+  bool is_leaf(std::size_t) const { return true; }
+
+  void add_leaf(const std::vector<Idx> &members) {
+    indices.push_back(members);
+    leaf_size = std::max(leaf_size, members.size());
+  }
+};
 
 template <typename In, typename Idx> struct RPTree {
   using Index = Idx;
@@ -125,42 +153,32 @@ std::pair<Idx, Idx> select_random_points(const std::vector<Idx> &indices,
   return {left_index, right_index};
 }
 
+template <typename In, typename It>
+In projection_margin(const std::vector<In> &normal, It row, In offset) {
+  return sum_feature_products(normal.begin(), normal.end(), row, offset,
+                              std::multiplies<>{});
+}
+
 template <typename In, typename Idx>
 uint8_t select_side(typename std::vector<In>::const_iterator data_it,
                     const std::vector<In> &hyperplane_vector,
                     In hyperplane_offset, RandomIntGenerator<Idx> &rng) {
   constexpr In EPS = 1e-8;
 
-  In margin =
-      std::inner_product(hyperplane_vector.begin(), hyperplane_vector.end(),
-                         data_it, hyperplane_offset);
+  const In margin =
+      projection_margin(hyperplane_vector, data_it, hyperplane_offset);
   if (std::abs(margin) < EPS) {
     return rng.rand_int(2);
   }
   return margin > 0 ? 0 : 1;
 }
 
-template <typename In, typename Idx>
-void split_indices(const std::vector<In> &data, std::size_t ndim,
-                   const std::vector<Idx> &indices,
-                   const std::vector<In> &hyperplane_vector,
-                   In hyperplane_offset, std::vector<Idx> &indices_left,
-                   std::vector<Idx> &indices_right,
-                   RandomIntGenerator<Idx> &rng) {
-  std::vector<uint8_t> side(indices.size(), 0);
-  std::size_t n_left = 0;
-  std::size_t n_right = 0;
-
-  for (std::size_t i = 0; i < indices.size(); ++i) {
-    side[i] = select_side(data.begin() + indices[i] * ndim, hyperplane_vector,
-                          hyperplane_offset, rng);
-    if (side[i] == 0) {
-      ++n_left;
-    } else {
-      ++n_right;
-    }
-  }
-
+template <typename Idx>
+void partition_indices(const std::vector<Idx> &indices,
+                       std::vector<uint8_t> &side, std::size_t n_left,
+                       std::size_t n_right, std::vector<Idx> &indices_left,
+                       std::vector<Idx> &indices_right,
+                       RandomIntGenerator<Idx> &rng) {
   // If either side is empty, reset counts and assign sides randomly.
   if (n_left == 0 || n_right == 0) {
     n_left = 0;
@@ -189,14 +207,39 @@ void split_indices(const std::vector<In> &data, std::size_t ndim,
 }
 
 template <typename In, typename Idx>
-std::tuple<std::vector<Idx>, std::vector<Idx>, std::vector<In>, In>
-euclidean_random_projection_split(const std::vector<In> &data, std::size_t ndim,
-                                  const std::vector<Idx> &indices,
-                                  RandomIntGenerator<Idx> &rng) {
+void split_indices(const std::vector<In> &data, std::size_t ndim,
+                   const std::vector<Idx> &indices,
+                   const std::vector<In> &hyperplane_vector,
+                   In hyperplane_offset, std::vector<Idx> &indices_left,
+                   std::vector<Idx> &indices_right,
+                   RandomIntGenerator<Idx> &rng) {
+  std::vector<uint8_t> side(indices.size(), 0);
+  std::size_t n_left = 0;
+  std::size_t n_right = 0;
+
+  for (std::size_t i = 0; i < indices.size(); ++i) {
+    side[i] = select_side(data.begin() + indices[i] * ndim, hyperplane_vector,
+                          hyperplane_offset, rng);
+    if (side[i] == 0) {
+      ++n_left;
+    } else {
+      ++n_right;
+    }
+  }
+
+  partition_indices(indices, side, n_left, n_right, indices_left, indices_right,
+                    rng);
+}
+
+template <typename In, typename Idx>
+std::pair<std::vector<In>, In>
+euclidean_split_plane(const std::vector<In> &data, std::size_t ndim,
+                      const std::vector<Idx> &indices,
+                      RandomIntGenerator<Idx> &rng) {
   auto [left_index, right_index] = select_random_points(indices, rng);
 
-  Idx left = indices[left_index] * ndim;
-  Idx right = indices[right_index] * ndim;
+  const std::size_t left = indices[left_index] * ndim;
+  const std::size_t right = indices[right_index] * ndim;
 
   // Compute hyperplane vector and offset
   std::vector<In> hyperplane_vector(ndim);
@@ -209,6 +252,16 @@ euclidean_random_projection_split(const std::vector<In> &data, std::size_t ndim,
   }
   hyperplane_offset -= sum / 2.0;
 
+  return {std::move(hyperplane_vector), hyperplane_offset};
+}
+
+template <typename In, typename Idx>
+std::tuple<std::vector<Idx>, std::vector<Idx>, std::vector<In>, In>
+euclidean_random_projection_split(const std::vector<In> &data, std::size_t ndim,
+                                  const std::vector<Idx> &indices,
+                                  RandomIntGenerator<Idx> &rng) {
+  auto [hyperplane_vector, hyperplane_offset] =
+      euclidean_split_plane(data, ndim, indices, rng);
   std::vector<Idx> indices_left;
   std::vector<Idx> indices_right;
   split_indices(data, ndim, indices, hyperplane_vector, hyperplane_offset,
@@ -220,16 +273,15 @@ euclidean_random_projection_split(const std::vector<In> &data, std::size_t ndim,
 }
 
 template <typename In, typename Idx>
-std::tuple<std::vector<Idx>, std::vector<Idx>, std::vector<In>, In>
-angular_random_projection_split(const std::vector<In> &data, size_t ndim,
-                                const std::vector<Idx> &indices,
-                                RandomIntGenerator<Idx> &rng) {
+std::vector<In> angular_split_plane(const std::vector<In> &data, size_t ndim,
+                                    const std::vector<Idx> &indices,
+                                    RandomIntGenerator<Idx> &rng) {
   constexpr In EPS = 1e-8;
 
   auto [left_index, right_index] = select_random_points(indices, rng);
 
-  Idx left = indices[left_index] * ndim;
-  Idx right = indices[right_index] * ndim;
+  const std::size_t left = indices[left_index] * ndim;
+  const std::size_t right = indices[right_index] * ndim;
 
   // Compute normal vector to the hyperplane
   In left_norm = 0.0;
@@ -263,7 +315,15 @@ angular_random_projection_split(const std::vector<In> &data, size_t ndim,
   for (size_t d = 0; d < ndim; ++d) {
     hyperplane_vector[d] /= hyperplane_norm;
   }
+  return hyperplane_vector;
+}
 
+template <typename In, typename Idx>
+std::tuple<std::vector<Idx>, std::vector<Idx>, std::vector<In>, In>
+angular_random_projection_split(const std::vector<In> &data, size_t ndim,
+                                const std::vector<Idx> &indices,
+                                RandomIntGenerator<Idx> &rng) {
+  auto hyperplane_vector = angular_split_plane(data, ndim, indices, rng);
   std::vector<Idx> indices_left;
   std::vector<Idx> indices_right;
   split_indices(data, ndim, indices, hyperplane_vector, In(0), indices_left,
@@ -273,9 +333,9 @@ angular_random_projection_split(const std::vector<In> &data, size_t ndim,
                          std::move(hyperplane_vector), In(0));
 }
 
-template <typename In, typename Idx, typename SplitFunc>
+template <typename In, typename Idx, typename SplitFunc, typename Tree>
 void make_tree_recursive(const std::vector<In> &data, std::size_t ndim,
-                         const std::vector<Idx> &indices, RPTree<In, Idx> &tree,
+                         const std::vector<Idx> &indices, Tree &tree,
                          RandomIntGenerator<Idx> &rng, SplitFunc split_function,
                          uint32_t leaf_size, uint32_t max_depth) {
   if (indices.size() > leaf_size && max_depth > 0) {
@@ -300,15 +360,14 @@ void make_tree_recursive(const std::vector<In> &data, std::size_t ndim,
   }
 }
 
-template <typename In, typename Idx>
-RPTree<In, Idx> make_dense_tree(const std::vector<In> &data, std::size_t ndim,
-                                RandomIntGenerator<Idx> &rng,
-                                uint32_t leaf_size, uint32_t max_tree_depth,
-                                bool angular) {
+template <typename In, typename Idx, typename Tree = RPTree<In, Idx>>
+Tree make_dense_tree(const std::vector<In> &data, std::size_t ndim,
+                     RandomIntGenerator<Idx> &rng, uint32_t leaf_size,
+                     uint32_t max_tree_depth, bool angular) {
   std::vector<Idx> indices(data.size() / ndim);
   std::iota(indices.begin(), indices.end(), 0);
 
-  RPTree<In, Idx> tree(indices.size(), leaf_size, ndim);
+  Tree tree(indices.size(), leaf_size, ndim);
   if (angular) {
 
     auto angular_splitter = [](const auto &data, auto ndim, const auto &indices,
@@ -330,22 +389,22 @@ RPTree<In, Idx> make_dense_tree(const std::vector<In> &data, std::size_t ndim,
   return tree;
 }
 
-template <typename In, typename Idx>
-std::vector<RPTree<In, Idx>>
+template <typename In, typename Idx, typename Tree = RPTree<In, Idx>>
+std::vector<Tree>
 make_forest(const std::vector<In> &data, std::size_t ndim, uint32_t n_trees,
             uint32_t leaf_size, uint32_t max_tree_depth,
             ParallelRandomIntProvider<Idx> &parallel_rand, bool angular,
             std::size_t n_threads, ProgressBase &progress,
             const Executor &executor) {
-  std::vector<RPTree<In, Idx>> rp_forest(n_trees);
+  std::vector<Tree> rp_forest(n_trees);
 
   parallel_rand.initialize();
 
   auto worker = [&](std::size_t begin, std::size_t end) {
     auto rng = parallel_rand.get_parallel_instance(end);
     for (auto i = begin; i < end; ++i) {
-      rp_forest[i] =
-          make_dense_tree(data, ndim, *rng, leaf_size, max_tree_depth, angular);
+      rp_forest[i] = make_dense_tree<In, Idx, Tree>(data, ndim, *rng, leaf_size,
+                                                    max_tree_depth, angular);
     }
   };
 
@@ -373,7 +432,7 @@ get_leaves_from_tree(const Tree &tree, std::size_t max_leaf_size) {
   using Idx = typename Tree::Index;
 
   std::size_t n_leaves = 0;
-  for (std::size_t i = 0; i < tree.children.size(); ++i) {
+  for (std::size_t i = 0; i < tree.indices.size(); ++i) {
     if (tree.is_leaf(i)) {
       ++n_leaves;
     }
@@ -383,7 +442,7 @@ get_leaves_from_tree(const Tree &tree, std::size_t max_leaf_size) {
 
   std::vector<Idx> leaf_indices(n_leaves * max_leaf_size, idx_sentinel);
   std::size_t insert_position = 0;
-  for (std::size_t i = 0; i < tree.children.size(); ++i) {
+  for (std::size_t i = 0; i < tree.indices.size(); ++i) {
     if (tree.is_leaf(i)) {
       const auto &indices = tree.indices[i];
       std::copy(indices.begin(), indices.end(),
@@ -404,7 +463,7 @@ get_leaves_from_forest(const std::vector<Tree> &forest,
   // Calculate total number of leaves and reserve space
   std::size_t total_leaves = 0;
   for (const auto &tree : forest) {
-    for (std::size_t i = 0; i < tree.children.size(); ++i) {
+    for (std::size_t i = 0; i < tree.indices.size(); ++i) {
       if (tree.is_leaf(i)) {
         ++total_leaves;
       }
@@ -424,85 +483,142 @@ get_leaves_from_forest(const std::vector<Tree> &forest,
   return leaf_indices;
 }
 
-template <typename Out, typename Idx>
+template <typename Out, typename Idx, typename CalculateFour = std::nullptr_t>
 void generate_leaf_updates(
     const BaseDistance<Out, Idx> &distance,
     const NNHeap<Out, Idx> &current_graph, const std::vector<Idx> &leaves,
     std::size_t max_leaf_size,
     std::vector<std::vector<std::tuple<Idx, Idx, Out>>> &updates,
-    std::size_t neighbor_begin, std::size_t begin, std::size_t end) {
+    std::size_t neighbor_begin, std::size_t begin, std::size_t end,
+    std::size_t batch_begin = 0,
+    const CalculateFour &calculate_four = nullptr) {
   constexpr auto npos = static_cast<Idx>(-1);
+  constexpr bool batched = !std::is_same_v<CalculateFour, std::nullptr_t>;
 
   for (std::size_t n = begin; n < end; ++n) {
     auto leaf_begin = leaves.begin() + n * max_leaf_size;
     auto leaf_end = leaf_begin + max_leaf_size;
-    auto &leaf_updates = updates[n];
+    if constexpr (batched) {
+      leaf_end = std::find(leaf_begin, leaf_end, npos);
+    }
+    auto &leaf_updates = updates[n - batch_begin];
 
     for (auto i = leaf_begin; i != leaf_end; ++i) {
       Idx p = *i;
-      if (p == npos) {
-        break;
+      if constexpr (!batched) {
+        if (p == npos) {
+          break;
+        }
       }
+      auto queue = [&](Idx q, Out d) {
+        if (current_graph.accepts_either(p, q, d)) {
+          leaf_updates.emplace_back(p, q, d);
+        }
+      };
 
       // if neighbor_begin == 0 then we consider an item to be a neighbor of
       // itself, otherwise neighbor_begin = 1 and only non-degenerate pairs
       // are considered
-      for (auto j = i + neighbor_begin; j != leaf_end; ++j) {
+      auto j = i + neighbor_begin;
+      if constexpr (batched) {
+        for (; leaf_end - j >= 4; j += 4) {
+          const std::array<Idx, 4> targets{j[0], j[1], j[2], j[3]};
+          const auto distances = calculate_four(p, targets);
+          // Preserve the scalar insertion order for tied distances.
+          for (std::size_t lane = 0; lane < targets.size(); ++lane) {
+            queue(targets[lane], distances[lane]);
+          }
+        }
+      }
+      for (; j != leaf_end; ++j) {
         Idx q = *j;
-        if (q == npos) {
-          break;
+        if constexpr (!batched) {
+          if (q == npos) {
+            break;
+          }
         }
-
-        const auto d = distance.calculate(p, q);
-        if (current_graph.accepts_either(p, q, d)) {
-          leaf_updates.emplace_back(p, q, d);
-        }
+        queue(q, distance.calculate(p, q));
       }
     }
   }
 }
 
-template <typename Out, typename Idx>
+template <typename Out, typename Idx, typename CalculateFour = std::nullptr_t>
 void init_rp_tree(const BaseDistance<Out, Idx> &distance,
                   NNHeap<Out, Idx> &current_graph,
                   const std::vector<Idx> &leaves, std::size_t max_leaf_size,
                   bool include_self, std::size_t n_threads,
-                  ProgressBase &progress, const Executor &executor) {
+                  ProgressBase &progress, const Executor &executor,
+                  const CalculateFour &calculate_four = nullptr) {
 
+  constexpr std::size_t batch_size = 65536;
   const std::size_t n_leaves = leaves.size() / max_leaf_size;
-  std::vector<std::vector<std::tuple<Idx, Idx, Out>>> updates(n_leaves);
+  std::vector<std::vector<std::tuple<Idx, Idx, Out>>> updates(
+      std::min(n_leaves, batch_size));
 
   // if include_self = true, then an item can be a neighbor of itself
   std::size_t neighbor_begin = include_self ? 0 : 1;
 
   auto worker = [&distance, &current_graph, &leaves, &updates, neighbor_begin,
-                 max_leaf_size](std::size_t begin, std::size_t end) {
+                 max_leaf_size,
+                 &calculate_four](std::size_t begin, std::size_t end) {
+    // Each worker receives a subrange of a single dispatch batch.
+    const auto batch_begin = begin - begin % batch_size;
     generate_leaf_updates(distance, current_graph, leaves, max_leaf_size,
-                          updates, neighbor_begin, begin, end);
+                          updates, neighbor_begin, begin, end, batch_begin,
+                          calculate_four);
   };
-  auto after_worker = [&current_graph, &updates](std::size_t, std::size_t) {
-    for (const auto &block_updates : updates) {
-      for (const auto &[p, q, d] : block_updates) {
-        current_graph.checked_push_pair(p, d, q);
+  auto after_worker = [&](std::size_t begin, std::size_t end) {
+    const auto count = end - begin;
+    if (n_threads <= 1) {
+      for (std::size_t i = 0; i < count; ++i) {
+        for (const auto &[p, q, d] : updates[i]) {
+          current_graph.checked_push_pair(p, d, q);
+        }
+        updates[i].clear();
       }
+      return;
+    }
+
+    // Each worker reads the batch in insertion order and writes only its rows.
+    // Limit repeated reads of the proposal stream at high thread counts.
+    const auto owners = std::min(n_threads, std::size_t{8});
+    const std::size_t rows = current_graph.n_points;
+    const auto grain = rows / owners + (rows % owners != 0);
+    auto apply_to_rows = [&](std::size_t first, std::size_t last) {
+      for (std::size_t i = 0; i < count; ++i) {
+        for (const auto &[p, q, d] : updates[i]) {
+          if (p >= first && p < last) {
+            current_graph.checked_push(p, d, q);
+          }
+          if (q != p && q >= first && q < last) {
+            current_graph.checked_push(q, d, p);
+          }
+        }
+      }
+    };
+    executor.parallel_for(0, rows, apply_to_rows, owners, grain);
+    for (std::size_t i = 0; i < count; ++i) {
+      updates[i].clear();
     }
   };
-  ExecutionParams exec_params{65536};
+  ExecutionParams exec_params{batch_size};
   progress.set_n_iters(1);
   dispatch_work(worker, after_worker, n_leaves, n_threads, exec_params,
                 progress, executor);
 }
 
-template <typename Out, typename Idx>
+template <typename Out, typename Idx, typename CalculateFour = std::nullptr_t>
 auto init_rp_tree(const BaseDistance<Out, Idx> &distance,
                   const std::vector<Idx> &leaves, std::size_t max_leaf_size,
                   uint32_t n_nbrs, bool include_self, std::size_t n_threads,
-                  ProgressBase &progress, const Executor &executor)
+                  ProgressBase &progress, const Executor &executor,
+                  const CalculateFour &calculate_four = nullptr)
     -> NNHeap<Out, Idx> {
   NNHeap<Out, Idx> current_graph(distance.get_ny(), n_nbrs);
 
   init_rp_tree(distance, current_graph, leaves, max_leaf_size, include_self,
-               n_threads, progress, executor);
+               n_threads, progress, executor, calculate_four);
 
   return current_graph;
 }
@@ -718,28 +834,10 @@ search_forest(const std::vector<SearchTree<In, Idx>> &forest,
               const VectorDistance<In, Out, Idx> &distance, uint32_t n_nbrs,
               ParallelRandomIntProvider<Idx> &rng_provider, bool cache,
               std::size_t n_threads, ProgressBase &progress,
-              const Executor &executor) {
-  const auto n_queries = distance.get_ny();
-  NNHeap<Out, Idx> current_graph(n_queries, n_nbrs);
-
-  rng_provider.initialize();
-  auto worker = [&](std::size_t begin, std::size_t end) {
-    auto rng_ptr = rng_provider.get_parallel_instance(end);
-    for (auto i = begin; i < end; ++i) {
-      if (cache) {
-        search_forest_cache(forest, distance, static_cast<Idx>(i), *rng_ptr,
-                            current_graph);
-      } else {
-        search_forest(forest, distance, static_cast<Idx>(i), *rng_ptr,
-                      current_graph);
-      }
-    }
-  };
-  progress.set_n_iters(n_queries);
-  ExecutionParams exec_params(std::max(n_threads, static_cast<std::size_t>(1)));
-  dispatch_work(worker, n_queries, n_threads, exec_params, progress, executor);
-
-  return current_graph;
+              const Executor &executor, std::size_t queries_per_worker = 1) {
+  return search_forest_queries(forest, distance, n_nbrs, rng_provider, cache,
+                               n_threads, progress, executor,
+                               queries_per_worker);
 }
 
 // Search Tree scoring/filtering

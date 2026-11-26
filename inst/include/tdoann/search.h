@@ -22,7 +22,7 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
 // CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// OF SUCH DAMAGE.
+// POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef TDOANN_SEARCH_H
 #define TDOANN_SEARCH_H
@@ -33,23 +33,39 @@
 #include "nngraph.h"
 #include "parallel.h"
 #include "progressbase.h"
+#include <array>
+#include <cstddef>
+#include <type_traits>
+#include <vector>
 
 namespace tdoann {
 
-template <typename Out, typename Idx>
-void nn_query(const SparseNNGraph<Out, Idx> &search_graph,
+template <typename Out, typename Idx, typename CalculateFour>
+void nn_query(const SparseAdjacency<Idx> &search_graph,
               NNHeap<Out, Idx> &nn_heap, const BaseDistance<Out, Idx> &distance,
               double epsilon, std::size_t max_distance_calculations,
               std::vector<std::size_t> &distance_counts, std::size_t n_threads,
-              ProgressBase &progress, const Executor &executor) {
+              ProgressBase &progress, const Executor &executor,
+              const CalculateFour &calculate_four) {
   auto worker = [&](std::size_t begin, std::size_t end) {
     non_search_query(nn_heap, distance, search_graph, epsilon,
-                     max_distance_calculations, distance_counts, begin, end);
+                     max_distance_calculations, distance_counts, begin, end,
+                     calculate_four);
   };
   progress.set_n_iters(1);
   ExecutionParams exec_params{100 * n_threads};
   dispatch_work(worker, nn_heap.n_points, n_threads, exec_params, progress,
                 executor);
+}
+
+template <typename Out, typename Idx>
+void nn_query(const SparseAdjacency<Idx> &search_graph,
+              NNHeap<Out, Idx> &nn_heap, const BaseDistance<Out, Idx> &distance,
+              double epsilon, std::size_t max_distance_calculations,
+              std::vector<std::size_t> &distance_counts, std::size_t n_threads,
+              ProgressBase &progress, const Executor &executor) {
+  nn_query(search_graph, nn_heap, distance, epsilon, max_distance_calculations,
+           distance_counts, n_threads, progress, executor, nullptr);
 }
 
 template <typename T, typename Container, typename Compare>
@@ -59,14 +75,16 @@ auto pop(std::priority_queue<T, Container, Compare> &queue) -> T {
   return result;
 }
 
-template <typename Out, typename Idx>
+template <typename Out, typename Idx, typename CalculateFour>
 void non_search_query(NNHeap<Out, Idx> &current_graph,
                       const BaseDistance<Out, Idx> &distance,
-                      const SparseNNGraph<Out, Idx> &search_graph,
-                      double epsilon, std::size_t max_distance_calculations,
+                      const SparseAdjacency<Idx> &search_graph, double epsilon,
+                      std::size_t max_distance_calculations,
                       std::vector<std::size_t> &distance_counts,
-                      std::size_t begin, std::size_t end) {
+                      std::size_t begin, std::size_t end,
+                      const CalculateFour &calculate_four) {
   constexpr auto npos = static_cast<Idx>(-1);
+  constexpr bool batched = !std::is_same_v<CalculateFour, std::nullptr_t>;
 
   const std::size_t n_nbrs = current_graph.n_nbrs;
   const double distance_scale = 1.0 + epsilon;
@@ -97,29 +115,66 @@ void non_search_query(NNHeap<Out, Idx> &current_graph,
       }
       auto vertex_idx = vertex.second;
       const std::size_t max_candidates = search_graph.n_nbrs(vertex_idx);
-      for (std::size_t k = 0; k < max_candidates; k++) {
+      auto accept = [&](Idx candidate_idx, Out dist) {
+        if (static_cast<double>(dist) >= distance_bound) {
+          return;
+        }
+        // The visited set already excludes every ID in the result heap.
+        if (current_graph.accepts(query_idx, dist)) {
+          current_graph.unchecked_push(query_idx, dist, candidate_idx);
+        }
+        seed_set.emplace(dist, candidate_idx);
+        distance_bound =
+            distance_scale *
+            static_cast<double>(current_graph.max_distance(query_idx));
+      };
+
+      std::array<Idx, 4> candidates;
+      std::size_t size = 0;
+      // Every eligible candidate uses one slot in the budget, even if its
+      // distance is still buffered. Apply distances in adjacency order.
+      for (std::size_t k = 0; k < max_candidates &&
+                              n_searches_for_query < max_distance_calculations;
+           ++k) {
         auto candidate_idx = search_graph.index(vertex_idx, k);
         if (candidate_idx == npos ||
             has_been_and_mark_visited(visited, candidate_idx)) {
           continue;
         }
-        if (n_searches_for_query >= max_distance_calculations) {
-          break;
+        ++n_searches_for_query;
+        if constexpr (batched) {
+          candidates[size++] = candidate_idx;
+          if (size == candidates.size()) {
+            const auto distances = calculate_four(query_idx, candidates);
+            for (std::size_t j = 0; j < candidates.size(); ++j) {
+              accept(candidates[j], distances[j]);
+            }
+            size = 0;
+          }
+        } else {
+          accept(candidate_idx, distance.calculate(candidate_idx, query_idx));
         }
-        auto dist = distance.calculate(candidate_idx, query_idx);
-        n_searches_for_query++;
-        if (static_cast<double>(dist) >= distance_bound) {
-          continue;
+      }
+      if constexpr (batched) {
+        for (std::size_t j = 0; j < size; ++j) {
+          accept(candidates[j], distance.calculate(candidates[j], query_idx));
         }
-        current_graph.checked_push(query_idx, dist, candidate_idx);
-        seed_set.emplace(dist, candidate_idx);
-        distance_bound =
-            distance_scale *
-            static_cast<double>(current_graph.max_distance(query_idx));
       }
     } // next candidate
     distance_counts[query_idx] = n_searches_for_query;
   }
+}
+
+template <typename Out, typename Idx>
+void non_search_query(NNHeap<Out, Idx> &current_graph,
+                      const BaseDistance<Out, Idx> &distance,
+                      const SparseAdjacency<Idx> &search_graph, double epsilon,
+                      std::size_t max_distance_calculations,
+                      std::vector<std::size_t> &distance_counts,
+                      std::size_t begin, std::size_t end) {
+  non_search_query(current_graph, distance, search_graph, epsilon,
+                   max_distance_calculations, distance_counts, begin, end,
+                   nullptr);
 }
 
 } // namespace tdoann

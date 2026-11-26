@@ -1,5 +1,4 @@
 library(rnndescent)
-context("Overlap")
 
 ui10_bf <- brute_force_knn(ui10, k = 4)
 
@@ -20,8 +19,47 @@ test_that("overlap range", {
   set.seed(1337)
   rnnbrs <- random_knn(ui10, k = 4)
   rov <- neighbor_overlap(ui10_bf, rnnbrs$idx, ret_vec = TRUE)
-  expect_equal(rov$mean, neighbor_overlap(rnnbrs$idx, ui10_bf), 1)
+  expect_equal(rov$mean, neighbor_overlap(rnnbrs$idx, ui10_bf))
   expect_equal(rov$mean, mean(rov$overlaps))
   expect_gte(min(rov$overlaps), 0)
   expect_lte(min(rov$overlaps), 1)
+})
+
+test_that("missing neighbor sentinel does not count as overlap", {
+  # fmt: skip
+  idx <- matrix(
+    c(
+      1L, 0L,
+      1L, 0L,
+      1L, 0L
+    ),
+    nrow = 3,
+    byrow = TRUE
+  )
+  # fmt: skip
+  ref_idx <- matrix(
+    c(
+      2L, 0L,
+      1L, 0L,
+      0L, 0L
+    ),
+    nrow = 3,
+    byrow = TRUE
+  )
+
+  ov <- neighbor_overlap(idx, ref_idx, k = 2, ret_vec = TRUE)
+  expect_equal(ov$overlaps, c(0, 0.5, 0))
+  expect_equal(ov$mean, mean(c(0, 0.5, 0)))
+})
+
+test_that("overlap diagnoses too few neighbor columns and unequal row counts", {
+  idx <- matrix(1:12, nrow = 3)
+  expect_error(
+    neighbor_overlap(idx, idx[, 1:2], k = 3),
+    "Not enough columns in 'idx2' for k = 3"
+  )
+  expect_error(
+    neighbor_overlap(idx, idx[1:2, ]),
+    "'idx1' and 'idx2' must have the same number of rows"
+  )
 })

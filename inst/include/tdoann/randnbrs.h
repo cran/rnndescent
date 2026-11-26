@@ -22,11 +22,13 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
 // CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// OF SUCH DAMAGE.
+// POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef TDOANN_RANDNBRS_H
 #define TDOANN_RANDNBRS_H
 
+#include <algorithm>
+#include <cstddef>
 #include <vector>
 
 #include "distancebase.h"
@@ -42,9 +44,18 @@ auto fill_random(NbrHeap &current_graph,
                                     typename NbrHeap::Index> &distance,
                  RandomIntGenerator<typename NbrHeap::Index> &rng,
                  typename NbrHeap::Index query,
-                 typename NbrHeap::Index n_ref_points) {
-  auto sampled_refs = rng.sample(static_cast<int>(n_ref_points),
-                                 static_cast<int>(n_ref_points));
+                 typename NbrHeap::Index n_ref_points,
+                 bool sample_heap_width = false) {
+  if (current_graph.is_full(query)) {
+    return;
+  }
+  // With finite scores, k distinct candidates suffice even if some are
+  // already present: their union with the seed IDs has at least k members.
+  const auto count = sample_heap_width
+                         ? std::min(current_graph.n_nbrs, n_ref_points)
+                         : n_ref_points;
+  auto sampled_refs =
+      rng.sample(static_cast<int>(n_ref_points), static_cast<int>(count));
   for (const auto ref : sampled_refs) {
     if (current_graph.is_full(query)) {
       return;
@@ -54,6 +65,20 @@ auto fill_random(NbrHeap &current_graph,
   }
 }
 
+template <typename Idx, typename MakeRng, typename FillRow>
+void fill_random_rows(Idx n_queries, std::size_t n_threads,
+                      ProgressBase &progress, const Executor &executor,
+                      const MakeRng &make_rng, const FillRow &fill_row) {
+  const auto worker = [&](std::size_t begin, std::size_t end) {
+    auto rng = make_rng(end);
+    for (auto query = begin; query < end; ++query) {
+      fill_row(*rng, static_cast<Idx>(query));
+    }
+  };
+  progress.set_n_iters(1);
+  dispatch_work(worker, n_queries, n_threads, progress, executor);
+}
+
 // fill any "missing" data with random neighbors
 template <typename NbrHeap>
 auto fill_random(
@@ -61,23 +86,18 @@ auto fill_random(
     const BaseDistance<typename NbrHeap::DistanceOut, typename NbrHeap::Index>
         &distance,
     ParallelRandomIntProvider<typename NbrHeap::Index> &rng_provider,
-    std::size_t n_threads, ProgressBase &progress, const Executor &executor) {
+    std::size_t n_threads, ProgressBase &progress, const Executor &executor,
+    bool sample_heap_width = false) {
   using Idx = typename NbrHeap::Index;
-
-  Idx n_ref_points = distance.get_nx();
+  const Idx n_ref_points = distance.get_nx();
   rng_provider.initialize();
-  auto worker = [&](std::size_t begin, std::size_t end) {
-    auto rng_ptr = rng_provider.get_parallel_instance(end);
-    for (auto query = begin; query < end; ++query) {
-      fill_random(current_graph, distance, *rng_ptr, static_cast<Idx>(query),
-                  n_ref_points);
-    }
-  };
-
-  progress.set_n_iters(1);
-  ExecutionParams exec_params{};
-  dispatch_work(worker, current_graph.n_points, n_threads, exec_params,
-                progress, executor);
+  fill_random_rows(
+      current_graph.n_points, n_threads, progress, executor,
+      [&](std::size_t end) { return rng_provider.get_parallel_instance(end); },
+      [&](auto &rng, Idx query) {
+        fill_random(current_graph, distance, rng, query, n_ref_points,
+                    sample_heap_width);
+      });
 }
 
 template <typename Out, typename Idx>
@@ -104,6 +124,9 @@ auto sample_neighbors(const BaseDistance<Out, Idx> &distance, Idx n_nbrs,
                       std::size_t n_threads, ProgressBase &progress,
                       const Executor &executor) -> NNGraph<Out, Idx> {
   const std::size_t n_points = distance.get_ny();
+  if (n_points == 0) {
+    return NNGraph<Out, Idx>(0, n_nbrs);
+  }
 
   std::vector<Idx> nn_idx(n_points * n_nbrs);
   std::vector<Out> nn_dist(n_points * n_nbrs);
@@ -128,6 +151,9 @@ auto sample_neighbors(const BaseDistance<Out, Idx> &distance, Idx n_nbrs,
                       RandomIntGenerator<Idx> &sampler, ProgressBase &progress)
     -> NNGraph<Out, Idx> {
   const std::size_t n_points = distance.get_ny();
+  if (n_points == 0) {
+    return NNGraph<Out, Idx>(0, n_nbrs);
+  }
 
   std::vector<Idx> nn_idx(n_points * n_nbrs);
   std::vector<Out> nn_dist(n_points * n_nbrs);
@@ -151,7 +177,7 @@ auto random_build(const BaseDistance<Out, Idx> &distance, Idx n_nbrs,
   auto nn_graph = sample_neighbors(distance, n_nbrs, sampler, n_threads,
                                    progress, executor);
   if (sort) {
-    sort_knn_graph(nn_graph, n_threads, progress, executor);
+    sort_query_graph(nn_graph, n_threads, progress, executor);
   }
   return nn_graph;
 }
@@ -163,7 +189,7 @@ auto random_build(const BaseDistance<Out, Idx> &distance, Idx n_nbrs,
 
   auto nn_graph = sample_neighbors(distance, n_nbrs, sampler, progress);
   if (sort) {
-    sort_knn_graph(nn_graph, progress);
+    sort_query_graph(nn_graph, progress);
   }
   return nn_graph;
 }

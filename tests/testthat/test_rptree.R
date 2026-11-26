@@ -1,7 +1,7 @@
 library(rnndescent)
-context("RP Tree")
 
 # just one tree
+# fmt: skip
 expected_rpt_knn <- list(
   idx = matrix(
     c(
@@ -37,54 +37,306 @@ expected_rpt_knn <- list(
   )
 )
 
-set.seed(1337)
-res <- rpf_knn(ui10, k = 4, leaf_size = 4, n_trees = 1)
-expect_equal(res, expected_rpt_knn, tolerance = 1e-7)
+test_that("RP forests recover neighbors with Euclidean and cosine distances", {
+  set.seed(1337)
+  res <- rpf_knn(ui10, k = 4, leaf_size = 4, n_trees = 1)
+  expect_equal(res, expected_rpt_knn, tolerance = 1e-7)
 
-set.seed(1337)
-res <- rpf_knn(ui10, k = 4)
-expect_equal(res$idx, ui10_nn4$idx, check.attributes = FALSE)
-expect_equal(res$dist, ui10_nn4$dist, check.attributes = FALSE, tolerance = 1e-4)
+  set.seed(1337)
+  res <- rpf_knn(ui10, k = 4)
+  expect_equal(res$idx, ui10_nn4$idx, ignore_attr = "dimnames")
+  expect_equal(
+    res$dist,
+    ui10_nn4$dist,
+    ignore_attr = "dimnames",
+    tolerance = 1e-4
+  )
 
-set.seed(1337)
-res <- rpf_knn(ui10, k = 4, include_self = FALSE)
-expect_equal(res$idx[, 1:3], ui10_nn4$idx[, 2:4], check.attributes = FALSE)
-expect_equal(res$dist[, 1:3], ui10_nn4$dist[, 2:4], check.attributes = FALSE, tolerance = 1e-4)
+  set.seed(1337)
+  res <- rpf_knn(ui10, k = 4, include_self = FALSE)
+  expect_equal(res$idx[, 1:3], ui10_nn4$idx[, 2:4], ignore_attr = "dimnames")
+  expect_equal(
+    res$dist[, 1:3],
+    ui10_nn4$dist[, 2:4],
+    ignore_attr = "dimnames",
+    tolerance = 1e-4
+  )
 
-# euclidean
-set.seed(1337)
-res <- rpf_knn(ui10, k = 4)
-expect_equal(res$idx, ui10_nn4$idx, check.attributes = FALSE)
-expect_equal(res$dist, ui10_nn4$dist, check.attributes = FALSE, tolerance = 1e-4)
+  # euclidean
+  set.seed(1337)
+  res <- rpf_knn(ui10, k = 4)
+  expect_equal(res$idx, ui10_nn4$idx, ignore_attr = "dimnames")
+  expect_equal(
+    res$dist,
+    ui10_nn4$dist,
+    ignore_attr = "dimnames",
+    tolerance = 1e-4
+  )
 
-# cosine
-set.seed(1337)
-uiris_rnn <- rpf_knn(uirism, 15, metric = "cosine", n_trees = 40)
-expect_equal(sum(uiris_rnn$dist), 1.347357, tolerance = 1e-3)
+  # cosine
+  set.seed(1337)
+  uiris_rnn <- rpf_knn(uirism, 15, metric = "cosine", n_trees = 40)
+  expect_equal(sum(uiris_rnn$dist), 1.347357, tolerance = 1e-3)
+})
 
 
-# multi-threading
-set.seed(1337)
-res <- rpf_knn(ui10, k = 4, leaf_size = 3, n_threads = 2, n_trees = 1)
-expect_in(c(NA), res$dist)
-expect_in(c(0), res$idx)
+test_that("recursive leaf-only forests preserve the initial graph and RNG state", {
+  x <- as.matrix(iris[c(1:12, 51:62), 1:4])
+  x[1, ] <- x[2, ]
+  cases <- list(
+    list(data = x, metric = "euclidean", n_threads = 1L),
+    list(
+      data = Matrix::Matrix(x, sparse = TRUE),
+      metric = "cosine",
+      n_threads = 2L
+    ),
+    list(data = x > 3, metric = "jaccard", n_threads = 2L)
+  )
 
-set.seed(1337)
-res <- rpf_knn(ui10, k = 4, n_threads = 2)
-expect_equal(res$idx, ui10_nn4$idx, check.attributes = FALSE)
-expect_equal(res$dist, ui10_nn4$dist, check.attributes = FALSE, tolerance = 1e-4)
+  for (args in cases) {
+    args <- c(
+      args,
+      list(
+        k = 4L,
+        n_trees = 5L,
+        leaf_size = 3L,
+        max_tree_depth = 2L,
+        include_self = FALSE
+      )
+    )
+    set.seed(472L)
+    leaf_graph <- do.call(rpf_knn, args)
+    leaf_rng <- .Random.seed
 
-# euclidean converges
-set.seed(1337)
-uiris_rnn <- rpf_knn(uiris, 15, n_trees = 40, n_threads = 2)
-expect_equal(sum(uiris_rnn$dist), ui_edsum, tolerance = 1e-3)
+    set.seed(472L)
+    full_graph <- do.call(rpf_knn, c(args, list(ret_forest = TRUE)))
+    expect_identical(.Random.seed, leaf_rng)
+    expect_identical(full_graph[c("idx", "dist")], leaf_graph)
+  }
+})
 
-# cosine
-set.seed(1337)
-uiris_rnn <- rpf_knn(uirism, 15, metric = "cosine", n_trees = 40, n_threads = 2)
-expect_equal(sum(uiris_rnn$dist), 1.347357, tolerance = 1e-3)
+test_that("grouped binary forest queries preserve random routing on ties", {
+  set.seed(731)
+  reference <- matrix(runif(128 * 65) < 0.2, nrow = 128)
+  reference[, 1] <- TRUE
+  forest <- rpf_build(reference, metric = "jaccard", n_trees = 2, leaf_size = 8)
+  # Every pivot is equally distant from an empty query. The last group is partial.
+  query <- matrix(FALSE, nrow = 259, ncol = ncol(reference))
+  search <- function(workers, cache) {
+    set.seed(732)
+    dqrng::dqset.seed(732L)
+    rpf_knn_query(
+      query,
+      reference,
+      forest,
+      k = 3,
+      cache = cache,
+      n_threads = workers
+    )
+  }
+  for (cache in c(TRUE, FALSE)) {
+    expected <- search(1, cache)
+    expect_gt(length(unique(expected$idx[, 1])), 1L)
+    expect_identical(search(8, cache), expected)
+  }
+})
+
+test_that("batched leaf updates preserve squared-Euclidean ties and tails", {
+  x <- as.matrix(iris[1:11, 1:4])
+  x[2, ] <- x[1, ]
+  for (self in c(FALSE, TRUE)) {
+    run <- function(ret_forest, threads = 2L) {
+      set.seed(127L)
+      dqrng::dqset.seed(127L)
+      graph <- rpf_knn(
+        x,
+        k = 5L,
+        metric = "euclidean",
+        n_trees = 1L,
+        leaf_size = 5L,
+        max_tree_depth = 0L,
+        include_self = self,
+        n_threads = threads,
+        ret_forest = ret_forest
+      )
+      list(
+        graph = graph[c("idx", "dist")],
+        r = .Random.seed,
+        dq = dqrng::dqrng_get_state()
+      )
+    }
+    # With zero split depth both routes visit the same single leaf.
+    expect_identical(run(FALSE), run(TRUE))
+    expect_identical(run(TRUE, 4L)$graph, run(TRUE, 1L)$graph)
+  }
+})
+
+test_that("dense cosine leaf batches and tails agree with direct scores", {
+  set.seed(931L)
+  x <- matrix(rnorm(11L * 29L), nrow = 11L)
+  x[1:2, ] <- 0
+  x[4, ] <- -x[3, ]
+  x[5, ] <- x[3, ]
+  x[6, ] <- x[6, ] * 2^-66
+  for (self in c(FALSE, TRUE)) {
+    for (threads in c(0L, 3L)) {
+      # One leaf exposes every pair, including the incomplete final batches.
+      g <- rpf_knn(
+        x,
+        k = nrow(x) - as.integer(!self),
+        metric = "cosine",
+        n_trees = 1L,
+        max_tree_depth = 0L,
+        include_self = self,
+        ret_forest = threads > 0L,
+        n_threads = threads
+      )
+      expect_true(all(g$idx > 0L))
+      expect_true(all(rowSums(g$idx == seq_len(nrow(x))) == as.integer(self)))
+      expected <- knn_distances(x, g$idx, metric = "cosine")
+      expect_lt(max(abs(g$dist - expected$dist)), 1e-6)
+    }
+  }
+})
+
+test_that("shared Euclidean splits preserve neighbors under translation", {
+  # At 4097 features the 80-row root exceeds the 63-row local cutoff.
+  x <- matrix(0, nrow = 80L, ncol = 4097L)
+  x[, 1L] <- seq_len(nrow(x)) - 40L
+  x[c(2L, 22L), 1L] <- x[c(3L, 23L), 1L]
+  forest <- function(data, workers) {
+    set.seed(108L)
+    dqrng::dqset.seed(108L)
+    rpf_knn(
+      data,
+      k = 8L,
+      n_trees = 1L,
+      leaf_size = 8L,
+      max_tree_depth = 1L,
+      n_threads = workers,
+      metric = "euclidean",
+      include_self = FALSE
+    )
+  }
+  original <- forest(x, 2L)
+  x[, 1L] <- x[, 1L] + 256
+  expect_identical(forest(x, 2L), original)
+  expect_identical(forest(x, 3L), original)
+})
+
+test_that("shared angular splits preserve leaf order across worker counts", {
+  set.seed(308L)
+  # At 1025 features the shared scan defers nodes with at most 255 rows.
+  # Five trees also exercise a partial group of projection planes.
+  x <- matrix(rnorm(900L * 1025L), nrow = 900L)
+  x[1:20, ] <- 0
+  x[21:40, ] <- rep(x[41L, ], each = 20L)
+  run <- function(workers) {
+    set.seed(710L)
+    rpf_knn(
+      x,
+      k = 8L,
+      metric = "cosine",
+      n_threads = workers,
+      n_trees = 5L,
+      leaf_size = 12L,
+      include_self = FALSE
+    )
+  }
+  g <- run(2L)
+  expect_identical(g, run(3L))
+  valid <- g$idx > 0L
+  expect_true(all(rowSums(valid) > 0L))
+  expect_identical(is.na(g$dist), !valid)
+  ids <- g$idx
+  ids[!valid] <- 1L
+  exact <- knn_distances(x, ids, metric = "cosine")$dist
+  expect_lt(max(abs(g$dist[valid] - exact[valid])), 2e-6)
+})
+
+test_that("indexed sparse margins preserve the tree and tie RNG", {
+  set.seed(712L)
+  x <- matrix(
+    sample(c(-2, -1, 0, 0, 0, 1, 2), 8L * 64L, replace = TRUE),
+    nrow = 8L
+  )
+  x[, 1:2] <- 0
+  x[, 3L] <- x[, 4L]
+  x <- Matrix::Matrix(x, sparse = TRUE)
+  x@x[1L] <- 0
+  wide <- x
+  # Trailing empty features select the merge without changing any support.
+  wide@Dim[1L] <- 1000000L
+  run <- function(data) {
+    set.seed(329L)
+    dqrng::dqset.seed(329L)
+    graph <- rpf_knn(
+      data,
+      k = 4L,
+      metric = "cosine",
+      n_trees = 5L,
+      leaf_size = 8L,
+      n_threads = 2L,
+      obs = "C",
+      ret_forest = TRUE
+    )
+    list(graph = graph, r = .Random.seed, dq = dqrng::dqrng_get_state())
+  }
+  expect_identical(run(x), run(wide))
+})
+
+test_that("threaded RP forests preserve neighbor quality and missing entries", {
+  # Excluding self from a singleton leaves no distance to correct.
+  res <- rpf_knn(
+    matrix(c(0, 1), nrow = 1),
+    k = 1,
+    metric = "jaccard",
+    include_self = FALSE,
+    n_threads = 2,
+    n_trees = 1
+  )
+  expect_equal(res$idx, matrix(0L, 1, 1))
+  expect_identical(is.na(res$dist), matrix(TRUE, 1, 1))
+
+  set.seed(1337)
+  partial <- rpf_knn(ui10, k = 4, leaf_size = 3, n_threads = 2, n_trees = 1)
+  expect_true(any(partial$idx == 0L))
+  expect_identical(is.na(partial$dist), partial$idx == 0L)
+
+  set.seed(1337)
+  res <- rpf_knn(ui10, k = 4, n_threads = 2)
+  expect_equal(res$idx, ui10_nn4$idx, ignore_attr = "dimnames")
+  expect_equal(
+    res$dist,
+    ui10_nn4$dist,
+    ignore_attr = "dimnames",
+    tolerance = 1e-4
+  )
+
+  # Dense Euclidean uses shared splits and has its own per-node streams.
+  set.seed(1337)
+  uiris_rnn <- rpf_knn(uiris, 15, n_trees = 40, n_threads = 2)
+  rng <- .Random.seed
+  set.seed(1337)
+  replay <- rpf_knn(uiris, 15, n_trees = 40, n_threads = 2)
+  expect_identical(replay, uiris_rnn)
+  expect_identical(.Random.seed, rng)
+  expect_gte(neighbor_overlap(uiris_rnn, brute_force_knn(uiris, 15)), 0.95)
+
+  # cosine
+  set.seed(1337)
+  uiris_rnn <- rpf_knn(
+    uirism,
+    15,
+    metric = "cosine",
+    n_trees = 40,
+    n_threads = 2
+  )
+  expect_equal(sum(uiris_rnn$dist), 1.347357, tolerance = 1e-3)
+})
 
 # R index
+# fmt: skip
 expected_rpf_index <- list(
   trees = list(
     list(
@@ -118,20 +370,22 @@ expected_rpf_index <- list(
 
 set.seed(1337)
 rpf_index <- rpf_build(ui10, metric = "euclidean", n_trees = 1, leaf_size = 4)
-expect_equal(rpf_index, expected_rpf_index, tolerance = 1e-7)
+test_that("explicit RP forests and cached queries match expected results", {
+  expect_equal(rpf_index, expected_rpf_index, tolerance = 1e-7)
 
-# query data against itself to reproduce knn (just more slowly)
-set.seed(1337)
-rpf_query_res <-
-  rpf_knn_query(
-    ui10,
-    ui10,
-    rpf_index,
-    k = 4,
-    n_threads = 0,
-    cache = TRUE
-  )
-expect_equal(rpf_query_res, expected_rpt_knn, tolerance = 1e-7)
+  # query data against itself to reproduce knn (just more slowly)
+  set.seed(1337)
+  rpf_query_res <-
+    rpf_knn_query(
+      ui10,
+      ui10,
+      rpf_index,
+      k = 4,
+      n_threads = 0,
+      cache = TRUE
+    )
+  expect_equal(rpf_query_res, expected_rpt_knn, tolerance = 1e-7)
+})
 
 test_that("rp tree APIs reject invalid k values", {
   expect_error(rpf_knn(ui10, k = 0), "k must be")
@@ -238,6 +492,7 @@ test_that("rp tree query rejects forests built for different reference data", {
     "forest must describe 2 features"
   )
 
+  # fmt: skip
   ref3s <- Matrix::Matrix(
     c(
       1, 0, 1,
@@ -268,6 +523,7 @@ test_that("rp tree query rejects forests built for different reference data", {
 })
 
 test_that("explicit-margin RP-tree builds classify dice and hamming as angular", {
+  # fmt: skip
   binary_data <- matrix(
     c(
       1, 0, 0, 1,
@@ -308,80 +564,67 @@ test_that("explicit-margin RP-tree builds classify dice and hamming as angular",
   expect_match(msg, "Using euclidean margin calculation")
 })
 
-set.seed(1337)
-rpf_query_res <-
-  rpf_knn_query(
-    ui10,
-    ui10,
-    rpf_index,
-    k = 4,
-    n_threads = 0,
-    cache = FALSE
-  )
-expect_equal(rpf_query_res, expected_rpt_knn, tolerance = 1e-7)
+test_that("uncached RP queries match expected neighbors", {
+  set.seed(1337)
+  rpf_query_res <-
+    rpf_knn_query(
+      ui10,
+      ui10,
+      rpf_index,
+      k = 4,
+      n_threads = 0,
+      cache = FALSE
+    )
+  expect_equal(rpf_query_res, expected_rpt_knn, tolerance = 1e-7)
+})
 
-# return forest with knn
-set.seed(1337)
-rpf_knnf <-
-  rpf_knn(
-    ui10,
-    k = 4,
-    metric = "euclidean",
-    n_trees = 1,
-    ret_forest = TRUE,
-    leaf_size = 4
+test_that("returned RP forests match builds and descent initialization", {
+  # return forest with knn
+  set.seed(1337)
+  rpf_knnf <-
+    rpf_knn(
+      ui10,
+      k = 4,
+      metric = "euclidean",
+      n_trees = 1,
+      ret_forest = TRUE,
+      leaf_size = 4
+    )
+  expect_equal(rpf_knnf$forest, expected_rpf_index, tolerance = 1e-7)
+  expect_equal(
+    list(idx = rpf_knnf$idx, dist = rpf_knnf$dist),
+    expected_rpt_knn,
+    ignore_attr = "dimnames",
+    tolerance = 1e-7
   )
-expect_equal(rpf_knnf$forest, expected_rpf_index, tolerance = 1e-7)
-expect_equal(
-  list(idx = rpf_knnf$idx, dist = rpf_knnf$dist),
-  expected_rpt_knn,
-  check.attributes = FALSE,
-  tolerance = 1e-7
-)
 
-set.seed(1337)
-nnd_with_tree <-
-  nnd_knn(
-    ui10,
-    k = 4,
-    ret_forest = TRUE,
-    init = "tree",
-    init_args = list(n_trees = 1, leaf_size = 4)
-  )
-expect_equal(nnd_with_tree$forest, expected_rpf_index, tolerance = 1e-7)
+  set.seed(1337)
+  nnd_with_tree <-
+    nnd_knn(
+      ui10,
+      k = 4,
+      ret_forest = TRUE,
+      init = "tree",
+      init_args = list(n_trees = 1, leaf_size = 4)
+    )
+  expect_equal(nnd_with_tree$forest, expected_rpf_index, tolerance = 1e-7)
 
-# handle alt metric
-set.seed(1337)
-nnd_with_tree <-
-  nnd_knn(
-    ui10,
-    k = 4,
-    ret_forest = TRUE,
-    init = "tree",
-    use_alt_metric = FALSE,
-    init_args = list(n_trees = 1, leaf_size = 4)
-  )
-rpf_index_no_alt <- expected_rpf_index
-rpf_index_no_alt$use_alt_metric <- FALSE
-rpf_index_no_alt$actual_metric <- "euclidean"
-expect_equal(nnd_with_tree$forest, rpf_index_no_alt, tolerance = 1e-7)
-
-
-# filtering
-set.seed(1337)
-rpf_knnf3 <-
-  rpf_knn(
-    ui10,
-    k = 4,
-    metric = "euclidean",
-    n_trees = 3,
-    ret_forest = TRUE,
-    leaf_size = 4
-  )
-expect_equal(length(rpf_knnf3$forest$trees), 3)
-rpf_f3f <- rpf_filter(rpf_knnf3, n_trees = 1)
-expect_equal(length(rpf_f3f$trees), 1)
-expect_equal(rpf_f3f$trees[[1]], rpf_knnf3$forest$trees[[1]])
+  # handle alt metric
+  set.seed(1337)
+  nnd_with_tree <-
+    nnd_knn(
+      ui10,
+      k = 4,
+      ret_forest = TRUE,
+      init = "tree",
+      use_alt_metric = FALSE,
+      init_args = list(n_trees = 1, leaf_size = 4)
+    )
+  rpf_index_no_alt <- expected_rpf_index
+  rpf_index_no_alt$use_alt_metric <- FALSE
+  rpf_index_no_alt$actual_metric <- "euclidean"
+  expect_equal(nnd_with_tree$forest, rpf_index_no_alt, tolerance = 1e-7)
+})
 
 
 test_that("can't pass mismatched forest and nn to filter", {
@@ -401,7 +644,8 @@ test_that("can't pass mismatched forest and nn to filter", {
       nn = iris_query_virginica,
       forest = iris_forest,
       n_trees = 1
-    ), "Mismatched"
+    ),
+    "Mismatched"
   )
 })
 
@@ -430,200 +674,297 @@ test_that("rpf_filter validates neighbor graph contents", {
   )
 })
 
-set.seed(1337)
-expect_equal(
-  rpf_build(ui10, metric = "euclidean", leaf_size = 4, n_threads = 0),
-  rpf_index_ls4e,
-  tolerance = 1e-7
-)
+test_that("rp tree query validates malformed forest objects", {
+  forest <- rpf_build(ui6, n_trees = 1, leaf_size = 3, n_threads = 0)
 
-# implicit margin
-set.seed(1337)
-rpi_knn <- rpf_knn(uirism[1:20, ], k = 4, verbose = FALSE, n_threads = 0, n_trees = 2, margin = "implicit")
-set.seed(1337)
-rpe_knn <- rpf_knn(uirism[1:20, ], k = 4, verbose = FALSE, n_threads = 0, n_trees = 2, margin = "explicit")
-expect_equal(rpe_knn$dist, rpi_knn$dist)
-
-expected_rpfi_index <- list(
-  trees = list(list(
-    normal_indices = matrix(c(
-      4, 0,
-      4, 1,
-      -1, -1,
-      -1, -1,
-      -1, -1
-    ), nrow = 5, byrow = TRUE),
-    children = matrix(c(
-      1, 4,
-      2, 3,
-      0, 3,
-      3, 7,
-      7, 10
-    ), nrow = 5, byrow = TRUE),
-    indices = c(2, 4, 7, 1, 3, 6, 8, 0, 5, 9),
-    leaf_size = 4
-  )),
-  margin = "implicit",
-  actual_metric = "sqeuclidean",
-  version = "0.0.12",
-  use_alt_metric = TRUE,
-  original_metric = "euclidean",
-  sparse = FALSE,
-  type = "rnndescent:rpforest"
-)
-set.seed(1337)
-rpf_knn2df <- rpf_knn(
-  ui10,
-  k = 4,
-  metric = "euclidean",
-  n_trees = 1,
-  ret_forest = TRUE,
-  leaf_size = 4,
-  margin = "implicit"
-)
-expect_equal(list(idx = rpf_knn2df$idx, dist = rpf_knn2df$dist), expected_rpt_knn, tolerance = 1e-7)
-expect_equal(rpf_knn2df$forest, expected_rpfi_index)
-
-set.seed(1337)
-rpfi_query_res <-
-  rpf_knn_query(
-    ui10,
-    ui10,
-    rpf_knn2df$forest,
-    k = 4,
-    n_threads = 0,
-    cache = TRUE
+  expect_error(
+    rpf_knn_query(ui4, ui6, forest = TRUE, k = 4, n_threads = 0),
+    "'forest' must be a list",
+    fixed = TRUE
   )
-expect_equal(rpfi_query_res, expected_rpt_knn, tolerance = 1e-7)
 
+  missing_margin <- forest
+  missing_margin$margin <- NULL
+  expect_error(
+    rpf_knn_query(ui4, ui6, forest = missing_margin, k = 4, n_threads = 0),
+    "'forest' must contain a 'margin' component",
+    fixed = TRUE
+  )
 
-set.seed(1337)
-rpf_knnfi3 <-
-  rpf_knn(
+  sparse_flag <- forest
+  sparse_flag$sparse <- TRUE
+  expect_error(
+    rpf_knn_query(ui4, ui6, forest = sparse_flag, k = 4, n_threads = 0),
+    "A sparse forest cannot be used with a dense 'reference'",
+    fixed = TRUE
+  )
+
+  dense_flag <- forest
+  dense_flag$sparse <- FALSE
+  expect_error(
+    rpf_knn_query(
+      ui10sp4,
+      ui10sp6,
+      forest = dense_flag,
+      k = 4,
+      n_threads = 0
+    ),
+    "A dense forest cannot be used with a sparse 'reference'",
+    fixed = TRUE
+  )
+
+  missing_trees <- forest
+  missing_trees$trees <- list()
+  expect_error(
+    rpf_knn_query(ui4, ui6, forest = missing_trees, k = 4, n_threads = 0),
+    "'forest$trees' must be a non-empty list",
+    fixed = TRUE
+  )
+
+  missing_hyperplanes <- forest
+  missing_hyperplanes$trees[[2]] <- missing_hyperplanes$trees[[1]]
+  missing_hyperplanes$trees[[2]]$hyperplanes <- NULL
+  expect_error(
+    rpf_knn_query(ui4, ui6, forest = missing_hyperplanes, k = 4, n_threads = 0),
+    "Explicit dense forest tree 2 must contain 'hyperplanes'",
+    fixed = TRUE
+  )
+})
+
+test_that("rpf_filter validates missing and empty forests", {
+  nn <- brute_force_knn(ui10, k = 4, n_threads = 0)
+  expect_error(
+    rpf_filter(nn, n_threads = 0),
+    "Provide 'forest' directly or in 'nn$forest'",
+    fixed = TRUE
+  )
+
+  forest_knn <- rpf_knn(ui10, k = 4, ret_forest = TRUE, n_threads = 0)
+  forest_knn$forest$trees <- list()
+  expect_error(
+    rpf_filter(forest_knn, n_threads = 0),
+    "'forest$trees' must contain at least one tree",
+    fixed = TRUE
+  )
+})
+
+test_that("explicit and implicit RP margins reproduce expected results", {
+  set.seed(1337)
+  expect_equal(
+    rpf_build(ui10, metric = "euclidean", leaf_size = 4, n_threads = 0),
+    rpf_index_ls4e,
+    tolerance = 1e-7
+  )
+
+  # implicit margin
+  set.seed(1337)
+  rpi_knn <- rpf_knn(
+    uirism[1:20, ],
+    k = 4,
+    verbose = FALSE,
+    n_threads = 0,
+    n_trees = 2,
+    margin = "implicit"
+  )
+  set.seed(1337)
+  rpe_knn <- rpf_knn(
+    uirism[1:20, ],
+    k = 4,
+    verbose = FALSE,
+    n_threads = 0,
+    n_trees = 2,
+    margin = "explicit"
+  )
+  expect_equal(rpe_knn$dist, rpi_knn$dist)
+})
+
+test_that("implicit RP forests and queries match expected results", {
+  # fmt: skip
+  expected_rpfi_index <- list(
+    trees = list(list(
+      normal_indices = matrix(c(
+        4, 0,
+        4, 1,
+        -1, -1,
+        -1, -1,
+        -1, -1
+      ), nrow = 5, byrow = TRUE),
+      children = matrix(c(
+        1, 4,
+        2, 3,
+        0, 3,
+        3, 7,
+        7, 10
+      ), nrow = 5, byrow = TRUE),
+      indices = c(2, 4, 7, 1, 3, 6, 8, 0, 5, 9),
+      leaf_size = 4
+    )),
+    margin = "implicit",
+    actual_metric = "sqeuclidean",
+    version = "0.0.12",
+    use_alt_metric = TRUE,
+    original_metric = "euclidean",
+    sparse = FALSE,
+    type = "rnndescent:rpforest"
+  )
+  set.seed(1337)
+  rpf_knn2df <- rpf_knn(
     ui10,
     k = 4,
     metric = "euclidean",
-    n_trees = 3,
+    n_trees = 1,
     ret_forest = TRUE,
     leaf_size = 4,
     margin = "implicit"
   )
-expect_equal(length(rpf_knnfi3$forest$trees), 3)
-rpf_fi3f <- rpf_filter(rpf_knnfi3, n_trees = 1)
-expect_equal(length(rpf_fi3f$trees), 1)
-expect_equal(rpf_fi3f$trees[[1]], rpf_knnfi3$forest$trees[[1]])
-expect_equal(rpf_fi3f$margin, rpf_knnfi3$forest$margin)
-expect_equal(rpf_fi3f$actual_metric, rpf_knnfi3$forest$actual_metric)
-expect_equal(rpf_fi3f$version, rpf_knnfi3$forest$version)
-expect_equal(rpf_fi3f$use_alt_metric, rpf_knnfi3$forest$use_alt_metric)
-expect_equal(rpf_fi3f$original_metric, rpf_knnfi3$forest$original_metric)
-
-
-set.seed(1337)
-rpf_knnff3 <-
-  rpf_knn(
-    ui10,
-    k = 4,
-    metric = "euclidean",
-    n_trees = 3,
-    ret_forest = TRUE,
-    leaf_size = 4,
-    margin = "explicit"
+  expect_equal(
+    list(idx = rpf_knn2df$idx, dist = rpf_knn2df$dist),
+    expected_rpt_knn,
+    tolerance = 1e-7
   )
-expect_equal(length(rpf_knnff3$forest$trees), 3)
-rpf_ff3f <- rpf_filter(rpf_knnff3, n_trees = 1)
-expect_equal(length(rpf_ff3f$trees), 1)
-expect_equal(rpf_ff3f$trees[[1]], rpf_knnff3$forest$trees[[1]])
-expect_equal(rpf_ff3f$margin, rpf_knnff3$forest$margin)
-expect_equal(rpf_ff3f$actual_metric, rpf_knnff3$forest$actual_metric)
-expect_equal(rpf_ff3f$version, rpf_knnff3$forest$version)
-expect_equal(rpf_ff3f$use_alt_metric, rpf_knnff3$forest$use_alt_metric)
-expect_equal(rpf_ff3f$original_metric, rpf_knnff3$forest$original_metric)
+  expect_equal(rpf_knn2df$forest, expected_rpfi_index)
 
-set.seed(1337)
-expect_equal(
-  rpf_build(ui10, metric = "euclidean", leaf_size = 4, margin = "implicit", n_threads = 0),
-  rpf_index_ls4i,
-  tolerance = 1e-7
-)
+  set.seed(1337)
+  rpfi_query_res <-
+    rpf_knn_query(
+      ui10,
+      ui10,
+      rpf_knn2df$forest,
+      k = 4,
+      n_threads = 0,
+      cache = TRUE
+    )
+  expect_equal(rpfi_query_res, expected_rpt_knn, tolerance = 1e-7)
+})
 
-set.seed(1337)
-rpf_index_ls4i_no_alt <- rpf_index_ls4i
-rpf_index_ls4i_no_alt$use_alt_metric <- FALSE
-rpf_index_ls4i_no_alt$actual_metric <- "euclidean"
 
-expect_equal(
-  rpf_build(ui10, metric = "euclidean", use_alt_metric = FALSE, leaf_size = 4, margin = "implicit", n_threads = 0),
-  rpf_index_ls4i_no_alt,
-  tolerance = 1e-7
-)
+test_that("filtering RP forests preserves tree contents and metadata", {
+  for (margin in c("explicit", "implicit")) {
+    set.seed(1337)
+    graph <- rpf_knn(
+      ui10,
+      k = 4,
+      n_trees = 3,
+      ret_forest = TRUE,
+      leaf_size = 4,
+      margin = margin
+    )
+    expected <- graph$forest
+    expect_length(expected$trees, 3)
+    expected$trees <- expected$trees[1L]
+    expect_equal(rpf_filter(graph, n_trees = 1), expected)
+  }
+})
 
-# cosine test
-set.seed(1337)
-uiriscos <-
-  rpf_knn(
-    uirism,
-    k = 15,
-    metric = "cosine",
-    n_threads = 0,
-    ret_forest = TRUE,
-    n_trees = 1
+test_that("implicit RP builds respect alternative metric selection", {
+  set.seed(1337)
+  expect_equal(
+    rpf_build(
+      ui10,
+      metric = "euclidean",
+      leaf_size = 4,
+      margin = "implicit",
+      n_threads = 0
+    ),
+    rpf_index_ls4i,
+    tolerance = 1e-7
   )
-set.seed(1337)
-uiriscosq <-
-  rpf_knn_query(
+
+  set.seed(1337)
+  rpf_index_ls4i_no_alt <- rpf_index_ls4i
+  rpf_index_ls4i_no_alt$use_alt_metric <- FALSE
+  rpf_index_ls4i_no_alt$actual_metric <- "euclidean"
+
+  expect_equal(
+    rpf_build(
+      ui10,
+      metric = "euclidean",
+      use_alt_metric = FALSE,
+      leaf_size = 4,
+      margin = "implicit",
+      n_threads = 0
+    ),
+    rpf_index_ls4i_no_alt,
+    tolerance = 1e-7
+  )
+})
+
+test_that("cosine RP queries agree across margins and caching options", {
+  # cosine test
+  set.seed(1337)
+  uiriscos <-
+    rpf_knn(
+      uirism,
+      k = 15,
+      metric = "cosine",
+      n_threads = 0,
+      ret_forest = TRUE,
+      n_trees = 1
+    )
+  set.seed(1337)
+  uiriscosq <-
+    rpf_knn_query(
+      uirism,
+      uirism,
+      uiriscos$forest,
+      k = 15,
+      n_threads = 0,
+    )
+  # handle ties where indices swap places
+  expect_equal(sum(uiriscos$idx - uiriscosq$idx), 0)
+
+  # test uncached
+  uiriscosq_nocache <- rpf_knn_query(
     uirism,
     uirism,
     uiriscos$forest,
     k = 15,
-    n_threads = 0,
+    n_threads = 2,
+    cache = FALSE
   )
-# handle ties where indices swap places
-expect_equal(sum(uiriscos$idx - uiriscosq$idx), 0)
+  expect_equal(sum(uiriscos$idx - uiriscosq_nocache$idx), 0)
 
-# test uncached
-uiriscosq_nocache <- rpf_knn_query(
-  uirism,
-  uirism,
-  uiriscos$forest,
-  k = 15,
-  n_threads = 2,
-  cache = FALSE
-)
-expect_equal(sum(uiriscos$idx - uiriscosq_nocache$idx), 0)
+  set.seed(1337)
+  uiriscosi <-
+    rpf_knn(
+      uirism,
+      k = 15,
+      metric = "cosine",
+      n_threads = 0,
+      ret_forest = TRUE,
+      margin = "implicit",
+      n_trees = 1
+    )
+  set.seed(1337)
+  uiriscosiq <-
+    rpf_knn_query(
+      uirism,
+      uirism,
+      uiriscosi$forest,
+      k = 15,
+      n_threads = 0,
+    )
+  expect_equal(sum(uiriscosi$idx - uiriscosq$idx), 0)
+  expect_equal(sum(uiriscosi$idx - uiriscosiq$idx), 0)
+})
 
-set.seed(1337)
-uiriscosi <-
-  rpf_knn(
-    uirism,
-    k = 15,
-    metric = "cosine",
-    n_threads = 0,
-    ret_forest = TRUE,
-    margin = "implicit",
-    n_trees = 1
+test_that("graph queries accept RP forests as initialization", {
+  set.seed(1337)
+  ui6f <- rpf_knn(
+    ui6,
+    k = 4,
+    leaf_size = 3,
+    ret_forest = TRUE
   )
-set.seed(1337)
-uiriscosiq <-
-  rpf_knn_query(
-    uirism,
-    uirism,
-    uiriscosi$forest,
-    k = 15,
-    n_threads = 0,
+  qnbrs4 <- graph_knn_query(
+    reference = ui6,
+    reference_graph = ui6f,
+    query = ui4,
+    init = ui6f$forest,
+    k = 4
   )
-expect_equal(sum(uiriscosi$idx - uiriscosq$idx), 0)
-expect_equal(sum(uiriscosi$idx - uiriscosiq$idx), 0)
-
-set.seed(1337)
-ui6f <- rpf_knn(
-  ui6,
-  k = 4,
-  leaf_size = 3,
-  ret_forest = TRUE
-)
-qnbrs4 <- graph_knn_query(reference = ui6, reference_graph = ui6f, query = ui4, init = ui6f$forest, k = 4)
-expect_equal(sum(qnbrs4$dist), ui4q_edsum, tolerance = 1e-6)
+  expect_equal(sum(qnbrs4$dist), ui4q_edsum, tolerance = 1e-6)
+})
 
 test_that("binary data", {
   # euclidean forces conversion to float data
@@ -634,9 +975,19 @@ test_that("binary data", {
   expect_equal(bin_euc_imp, bin_euc_exp)
 
   set.seed(1337)
-  bin_jac_imp <- rpf_knn(lbitdata, k = 4, margin = "implicit", metric = "jaccard")
+  bin_jac_imp <- rpf_knn(
+    lbitdata,
+    k = 4,
+    margin = "implicit",
+    metric = "jaccard"
+  )
   set.seed(1337)
-  bin_jac_exp <- rpf_knn(lbitdata, k = 4, margin = "explicit", metric = "jaccard")
+  bin_jac_exp <- rpf_knn(
+    lbitdata,
+    k = 4,
+    margin = "explicit",
+    metric = "jaccard"
+  )
   expect_equal(bin_jac_imp, bin_jac_exp)
   set.seed(1337)
   bin_jac_aut <- rpf_knn(lbitdata, k = 4, margin = "auto", metric = "jaccard")
@@ -680,45 +1031,122 @@ test_that("sparse implicit margin", {
   set.seed(1337)
   dknn <- rpf_knn(ui10z, k = 4, leaf_size = 3, n_trees = 2, margin = "implicit")
   set.seed(1337)
-  sknn <- rpf_knn(ui10sp, k = 4, leaf_size = 3, n_trees = 2, margin = "implicit")
+  sknn <- rpf_knn(
+    ui10sp,
+    k = 4,
+    leaf_size = 3,
+    n_trees = 2,
+    margin = "implicit"
+  )
   expect_equal(sknn, dknn, tolerance = 1e-6)
 
   set.seed(1337)
-  dknn <- rpf_knn(ui10z, k = 4, leaf_size = 3, n_trees = 2, margin = "implicit", ret_forest = TRUE)
+  dknn <- rpf_knn(
+    ui10z,
+    k = 4,
+    leaf_size = 3,
+    n_trees = 2,
+    margin = "implicit",
+    ret_forest = TRUE
+  )
   set.seed(1337)
-  sknn <- rpf_knn(ui10sp, k = 4, leaf_size = 3, n_trees = 2, margin = "implicit", ret_forest = TRUE)
-  expect_equal(list(idx = sknn$idx, dist = sknn$dist), list(idx = dknn$idx, dist = dknn$dist), tolerance = 1e-6)
+  sknn <- rpf_knn(
+    ui10sp,
+    k = 4,
+    leaf_size = 3,
+    n_trees = 2,
+    margin = "implicit",
+    ret_forest = TRUE
+  )
+  expect_equal(
+    list(idx = sknn$idx, dist = sknn$dist),
+    list(idx = dknn$idx, dist = dknn$dist),
+    tolerance = 1e-6
+  )
   dknn$forest$sparse <- TRUE
   expect_equal(sknn$forest, dknn$forest)
 
   set.seed(1337)
-  dforest <- rpf_build(ui10z, leaf_size = 3, n_trees = 2, margin = "implicit", metric = "cosine")
+  dforest <- rpf_build(
+    ui10z,
+    leaf_size = 3,
+    n_trees = 2,
+    margin = "implicit",
+    metric = "cosine"
+  )
   set.seed(1337)
-  sforest <- rpf_build(ui10sp, leaf_size = 3, n_trees = 2, margin = "implicit", metric = "cosine")
-  expect_equal(sforest$actual_metric, "alternative-cosine")
+  sforest <- rpf_build(
+    ui10sp,
+    leaf_size = 3,
+    n_trees = 2,
+    margin = "implicit",
+    metric = "cosine"
+  )
+  expect_equal(sforest$actual_metric, "cosine")
   expect_true(sforest$sparse)
   sforest$sparse <- FALSE
   expect_equal(sforest, dforest, tolerance = 1e-6)
 
   set.seed(1337)
-  dforest6 <- rpf_build(ui10z6, leaf_size = 3, n_trees = 2, margin = "implicit", metric = "cosine")
+  dforest6 <- rpf_build(
+    ui10z6,
+    leaf_size = 3,
+    n_trees = 2,
+    margin = "implicit",
+    metric = "cosine"
+  )
   set.seed(1337)
-  dquery4 <- rpf_knn_query(query = ui10z4, reference = ui10z6, forest = dforest6, k = 4)
-  expect_error(squery4 <- rpf_knn_query(query = ui10sp4, reference = ui10sp6, forest = dforest6, k = 4), "sparse forest")
+  dquery4 <- rpf_knn_query(
+    query = ui10z4,
+    reference = ui10z6,
+    forest = dforest6,
+    k = 4
+  )
+  expect_error(
+    squery4 <- rpf_knn_query(
+      query = ui10sp4,
+      reference = ui10sp6,
+      forest = dforest6,
+      k = 4
+    ),
+    "dense forest"
+  )
   # hack the forest to force it to work with sparse
   dforest6$sparse <- TRUE
   set.seed(1337)
-  squery4 <- rpf_knn_query(query = ui10sp4, reference = ui10sp6, forest = dforest6, k = 4)
+  squery4 <- rpf_knn_query(
+    query = ui10sp4,
+    reference = ui10sp6,
+    forest = dforest6,
+    k = 4
+  )
   expect_equal(squery4, dquery4, tolerance = 1e-4)
 
   set.seed(1337)
-  sforest6 <- rpf_build(ui10sp6, leaf_size = 3, n_trees = 2, margin = "implicit", metric = "cosine")
+  sforest6 <- rpf_build(
+    ui10sp6,
+    leaf_size = 3,
+    n_trees = 2,
+    margin = "implicit",
+    metric = "cosine"
+  )
   set.seed(1337)
-  squery4b <- rpf_knn_query(query = ui10sp4, reference = ui10sp6, forest = sforest6, k = 4)
+  squery4b <- rpf_knn_query(
+    query = ui10sp4,
+    reference = ui10sp6,
+    forest = sforest6,
+    k = 4
+  )
   expect_equal(squery4b, squery4, tolerance = 1e-5)
 
   set.seed(1337)
-  squery4b <- rpf_knn_query(query = ui10sp4, reference = ui10sp6, forest = sforest6, k = 4, cache = FALSE)
+  squery4b <- rpf_knn_query(
+    query = ui10sp4,
+    reference = ui10sp6,
+    forest = sforest6,
+    k = 4,
+    cache = FALSE
+  )
   expect_equal(squery4b, squery4, tolerance = 1e-5)
 })
 
@@ -732,38 +1160,116 @@ test_that("rp tree APIs normalize non-dgC sparse inputs", {
   expect_equal(observed_knn, expected_knn, tolerance = 1e-6)
 
   set.seed(1337)
-  expected_forest <- rpf_build(ui10sp, metric = "euclidean", n_trees = 1, leaf_size = 4)
+  expected_forest <- rpf_build(
+    ui10sp,
+    metric = "euclidean",
+    n_trees = 1,
+    leaf_size = 4
+  )
   set.seed(1337)
-  observed_forest <- rpf_build(data_r, metric = "euclidean", n_trees = 1, leaf_size = 4)
+  observed_forest <- rpf_build(
+    data_r,
+    metric = "euclidean",
+    n_trees = 1,
+    leaf_size = 4
+  )
   expect_equal(observed_forest, expected_forest, tolerance = 1e-6)
 
   set.seed(1337)
-  expected_query <- rpf_knn_query(ui10sp, ui10sp, expected_forest, k = 4, n_threads = 0, cache = TRUE)
+  expected_query <- rpf_knn_query(
+    ui10sp,
+    ui10sp,
+    expected_forest,
+    k = 4,
+    n_threads = 0,
+    cache = TRUE
+  )
   set.seed(1337)
-  observed_query <- rpf_knn_query(data_r, data_r, expected_forest, k = 4, n_threads = 0, cache = TRUE)
+  observed_query <- rpf_knn_query(
+    data_r,
+    data_r,
+    expected_forest,
+    k = 4,
+    n_threads = 0,
+    cache = TRUE
+  )
   expect_equal(observed_query, expected_query, tolerance = 1e-6)
 })
 
+
+test_that("sparse margins accumulate products starting with the offset", {
+  reference <- Matrix::drop0(rbind(c(0, 0, 0), c(1, 1, 1)))
+  query <- Matrix::drop0(matrix(c(1, 1, 1), nrow = 1))
+  set.seed(42)
+  forest <- rpf_build(
+    reference,
+    n_trees = 1,
+    leaf_size = 1,
+    margin = "explicit"
+  )
+  tree <- forest$trees[[1]]
+  # The offset rounds away on the first addition. Adding it last would
+  # change the margin from -0.25 to 0.25 and visit the other leaf.
+  tree$offsets[1] <- 0.5
+  tree$hyperplanes_ind <- 0:2
+  tree$hyperplanes_data <- c(1e8, -1e8, -0.25)
+  tree$hyperplanes_ptr <- c(0L, 3L, 3L, 3L)
+  forest$trees[[1]] <- tree
+  right_leaf <- tree$children[1, 2] + 1L
+  right_index <- tree$indices[tree$children[right_leaf, 1] + 1L] + 1L
+  result <- rpf_knn_query(query, reference, forest = forest, k = 1)
+  expect_equal(result$idx, matrix(right_index))
+
+  # Older serialized forests include unused feature-length arrays at leaves.
+  tree$hyperplanes_ind <- c(tree$hyperplanes_ind, rep(0L, 6))
+  tree$hyperplanes_data <- c(tree$hyperplanes_data, rep(0, 6))
+  tree$hyperplanes_ptr <- c(0L, 3L, 6L, 9L)
+  forest$trees[[1]] <- tree
+  expect_equal(rpf_knn_query(query, reference, forest = forest, k = 1), result)
+})
 
 test_that("sparse explicit margin", {
   set.seed(1337)
   dknn <- rpf_knn(ui10z, k = 4, leaf_size = 3, n_trees = 2, margin = "explicit")
   set.seed(1337)
-  sknn <- rpf_knn(ui10sp, k = 4, leaf_size = 3, n_trees = 2, margin = "explicit")
+  sknn <- rpf_knn(
+    ui10sp,
+    k = 4,
+    leaf_size = 3,
+    n_trees = 2,
+    margin = "explicit"
+  )
   expect_equal(sknn, dknn, tolerance = 1e-6)
 
   # implict and explicit should give the same results for euclidean
   set.seed(1337)
-  siknn <- rpf_knn(ui10sp, k = 4, leaf_size = 3, n_trees = 2, margin = "implicit")
+  siknn <- rpf_knn(
+    ui10sp,
+    k = 4,
+    leaf_size = 3,
+    n_trees = 2,
+    margin = "implicit"
+  )
   expect_equal(siknn, sknn)
 
   set.seed(1337)
-  sknn6 <- rpf_knn(ui10sp6, k = 4, leaf_size = 2, n_trees = 2, ret_forest = TRUE)
+  sknn6 <- rpf_knn(
+    ui10sp6,
+    k = 4,
+    leaf_size = 2,
+    n_trees = 2,
+    ret_forest = TRUE
+  )
   set.seed(1337)
   sforest6 <- rpf_build(ui10sp6, leaf_size = 2, n_trees = 2)
   expect_equal(sforest6$margin, "explicit")
   expect_equal(sknn6$forest$margin, "explicit")
   expect_equal(sforest6, sknn6$forest)
+  for (tree in sforest6$trees) {
+    leaf <- is.nan(tree$offsets)
+    expect_true(any(!leaf))
+    expect_true(all(diff(tree$hyperplanes_ptr)[leaf] == 0L))
+  }
 
   s6_ff <- rpf_filter(sknn6)
   expect_equal(length(s6_ff$trees), 1)
@@ -775,28 +1281,74 @@ test_that("sparse explicit margin", {
   res_knnforest <- rpf_knn_query(ui10sp4, ui10sp6, forest = sknn6$forest, k = 4)
   expect_equal(res_forest, res_knnforest)
 
+  missing_hyperplanes <- sforest6
+  missing_hyperplanes$trees[[2]]$hyperplanes_ind <- NULL
+  expect_error(
+    rpf_knn_query(
+      ui10sp4,
+      ui10sp6,
+      forest = missing_hyperplanes,
+      k = 4,
+      n_threads = 0
+    ),
+    "Explicit sparse forest tree 2 must contain 'hyperplanes_ind'",
+    fixed = TRUE
+  )
+
   set.seed(1337)
-  dknn6 <- rpf_knn(ui10z6, k = 4, leaf_size = 2, n_trees = 2, margin = "explicit", ret_forest = TRUE)
+  dknn6 <- rpf_knn(
+    ui10z6,
+    k = 4,
+    leaf_size = 2,
+    n_trees = 2,
+    margin = "explicit",
+    ret_forest = TRUE
+  )
   set.seed(1337)
   res_dknn <- rpf_knn_query(ui10z4, ui10z6, forest = dknn6$forest, k = 4)
   expect_equal(res_forest, res_dknn)
 
   # uncached
   set.seed(1337)
-  res_dknn_nocache <- rpf_knn_query(ui10z4, ui10z6, forest = dknn6$forest, k = 4, cache = FALSE)
+  res_dknn_nocache <- rpf_knn_query(
+    ui10z4,
+    ui10z6,
+    forest = dknn6$forest,
+    k = 4,
+    cache = FALSE
+  )
   expect_equal(res_forest, res_dknn_nocache)
 
   # implict and explicit should give the same results for cosine also
   set.seed(1337)
-  secknn <- rpf_knn(ui10sp, k = 4, leaf_size = 3, n_trees = 2, margin = "explicit", metric = "cosine")
+  secknn <- rpf_knn(
+    ui10sp,
+    k = 4,
+    leaf_size = 3,
+    n_trees = 2,
+    margin = "explicit",
+    metric = "cosine"
+  )
   set.seed(1337)
-  sicknn <- rpf_knn(ui10sp, k = 4, leaf_size = 3, n_trees = 2, margin = "implicit", metric = "cosine")
+  sicknn <- rpf_knn(
+    ui10sp,
+    k = 4,
+    leaf_size = 3,
+    n_trees = 2,
+    margin = "implicit",
+    metric = "cosine"
+  )
   expect_equal(secknn, sicknn)
 
   set.seed(1337)
-  sacknn <- rpf_knn(ui10sp,
-    k = 4, leaf_size = 3, n_trees = 2,
-    margin = "explicit", metric = "cosine", use_alt_metric = FALSE
+  sacknn <- rpf_knn(
+    ui10sp,
+    k = 4,
+    leaf_size = 3,
+    n_trees = 2,
+    margin = "explicit",
+    metric = "cosine",
+    use_alt_metric = FALSE
   )
   expect_equal(sacknn, secknn, tolerance = 1e-4)
 })

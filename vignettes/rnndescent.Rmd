@@ -20,7 +20,7 @@ heavily on the Python package [PyNNDescent](https://github.com/lmcinnes/pynndesc
 by [Leland McInnes](https://github.com/lmcinnes), but is a fully independent
 reimplementation written in C++. It uses the following techniques:
 
-1. Initialization by creating a forest of random project trees
+1. Initialization by creating a forest of random projection trees
 [@dasgupta2008random].
 2. Optimization by using nearest neighbor descent
 [@dong2011efficient]. 
@@ -29,12 +29,12 @@ from FANNG [@harwood2016fanng].
 4. For querying new data, the back-tracking search from NGT
 [@iwasaki2018optimization] (without dynamic degree-adjustment).
 
-The easiest way to find k-nearest neighbors and query new data is to use the
-`rnnd_knn` function, which combine several of the available techniques into
-sensible defaults use the `rnnd_build` and `rnnd_query` functions. For greater
+The easiest way to find k-nearest neighbors is to use `rnnd_knn`. To query new
+data, use `rnnd_build` to build an index and `rnnd_query` to search it. These
+functions combine several of the available techniques with sensible defaults. For greater
 flexibility, the underlying functions used by `rnnd_build` and `rnnd_query` can
 be used directly. The other vignettes in this package describe their use and go
-into more detail about the how the methods work.
+into more detail about how the methods work.
 
 ```{r setup}
 library(rnndescent)
@@ -68,7 +68,7 @@ lapply(iris_knn, function(x) {
 
 `rnnd_knn` returns the k-nearest neighbors, but does not return any "index" that
 you can use to query new data. To do that, use `rnnd_build`. Normally you would
-query the index with different from that which you used to build the index, so
+query the index with data different from that which you used to build the index, so
 let's split `iris` up:
 
 ```{r iris split}
@@ -81,7 +81,7 @@ iris_index <- rnnd_build(iris_even, k = 5)
 ```
 
 The index is also a list but with a lot more components (none of which are 
-intended for manual examination), apart from the the neighbor graph which can
+intended for manual examination), apart from the neighbor graph which can
 be found under the `graph` component in the same format as the return value of
 `rnnd_knn`:
 
@@ -108,6 +108,9 @@ lapply(iris_odd_nn, function(x) {
   head(x, 3)
 })
 ```
+
+If you'll query the same index repeatedly, use `rnnd_prepare()` once and pass
+the returned handle to `rnnd_query()`. See `?rnnd_prepare` for supported indexes.
 
 You don't need to keep the data that was used to build the index around, because
 internally, the index stores that (that's one of the reasons the index can get
@@ -149,7 +152,8 @@ neighbor_overlap(iris_index$graph, iris_knn_improved)
 
 As there was no change to the graph, the overlap is 100%. More details on this
 can be found in the [hubness](hubness.html) vignette and a more ambitious
-dataset is covered in the [FMNIST article](https://jlmelville.github.io/rnndescent/articles/fmnist-example.html).
+dataset is covered in the
+[FMNIST article](https://jlmelville.github.io/rnndescent/articles/fmnist-example.html).
 
 ## Parallelism
 
@@ -169,8 +173,9 @@ neighbor packages. See the [metrics](metrics.html) vignette for more details.
 ## Supported Data Types
 
 * Dense matrices and data frames.
-* Sparse matrices, in the `dgCMatrix`. All the same distances are supported as
-for dense matrices.
+* Sparse matrices in `dgCMatrix`, `dgRMatrix`, or `dgTMatrix` form. The main
+distances supported for dense matrices are also available for sparse matrices,
+except for Haversine. The optional preprocessing variants are dense-only.
 * Additionally, for dense binary data, if you supply it as a `logical` matrix,
 then for certain distances intended for binary data, specialized functions will
 be used to speed up the computation.
@@ -180,7 +185,8 @@ be used to speed up the computation.
 There are several options that `rnnd_build` and `rnnd_query` expose that can
 be modified to change the behavior of the different stages of the algorithm.
 See the documentation for those functions (e.g. `?rnnd_build`) or the
-[Random Partition Forests](random-partition-forests.html), [Nearest Neighbor Descent](nearest-neighbor-descent.html) and [Querying Data](querying-data.html)
+[Random Partition Forests](random-partition-forests.html),
+[Nearest Neighbor Descent](nearest-neighbor-descent.html) and [Querying Data](querying-data.html)
 vignettes for more details.
 
 ## References

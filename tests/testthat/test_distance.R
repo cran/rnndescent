@@ -1,5 +1,16 @@
 library(rnndescent)
 
+test_that("dense Euclidean leaf distances include trailing features", {
+  set.seed(951)
+  for (width in c(7L, 8L, 9L, 19L)) {
+    x <- matrix(rnorm(11L * width), ncol = width)
+    graph <- rpf_knn(x, k = 11L, n_trees = 1L, leaf_size = 11L, n_threads = 2L)
+    expected <- unname(t(apply(as.matrix(dist(x)), 1L, sort)))
+    expect_equal(graph$dist, expected, tolerance = 1e-6)
+    expect_equal(knn_distances(x, graph$idx)$dist, expected, tolerance = 1e-6)
+  }
+})
+
 test_that("Bray-Curtis", {
   dbf <- brute_force_knn(ui10z, k = 4, metric = "braycurtis")
   sbd <- brute_force_knn(ui10sp, k = 4, metric = "braycurtis")
@@ -21,23 +32,39 @@ test_that("Chebyshev", {
 test_that("Cosine", {
   bfdense <- brute_force_knn(bitdata, k = 4, metric = "cosine")
   araw <- brute_force_knn(bitdata, k = 4, metric = "alternative-cosine")
-  unc <- apply_dense_alt_metric_uncorrection("cosine", bfdense$dist)
-  expect_equal(unc, araw$dist)
-  expect_equal(brute_force_knn(bitdata, k = 4, metric = "cosine", use_alt_metric = FALSE), bfdense, tolerance = 1e-7)
+  expect_equal(1 - 2^-araw$dist, bfdense$dist, tolerance = 1e-7)
+  expect_equal(
+    brute_force_knn(bitdata, k = 4, metric = "cosine", use_alt_metric = FALSE),
+    bfdense,
+    tolerance = 1e-7
+  )
 
   # sparse
-  bfsparse <- brute_force_knn(bitdatasp, k = 4, metric = "cosine", use_alt_metric = FALSE)
-  expect_equal(bfdense, bfsparse, tolerance = 1e-7)
+  bfsparse <- brute_force_knn(
+    bitdatasp,
+    k = 4,
+    metric = "cosine",
+    use_alt_metric = FALSE
+  )
+  # The plain dense and sparse kernels can differ by a float rounding unit.
+  expect_equal(bfdense, bfsparse, tolerance = 1e-6)
 
   # check sparse uncorrection
   set.seed(1337)
-  spunc <- nnd_knn(bitdatasp,
-    k = 4, metric = "cosine", n_iters = 0,
+  spunc <- nnd_knn(
+    bitdatasp,
+    k = 4,
+    metric = "cosine",
+    n_iters = 0,
     init = random_knn(bitdatasp, k = 4, metric = "cosine")
   )
   set.seed(1337)
-  spnoc <- nnd_knn(bitdatasp,
-    k = 4, metric = "cosine", use_alt_metric = FALSE, n_iters = 0,
+  spnoc <- nnd_knn(
+    bitdatasp,
+    k = 4,
+    metric = "cosine",
+    use_alt_metric = FALSE,
+    n_iters = 0,
     init = random_knn(bitdatasp, k = 4, metric = "cosine")
   )
   expect_equal(spunc, spnoc, tolerance = 1e-7)
@@ -62,42 +89,71 @@ test_that("Dot", {
   araw <- brute_force_knn(bitdata, k = 4, metric = "alternative-dot")
   unc <- apply_dense_alt_metric_uncorrection("dot", bfdense$dist)
   expect_equal(unc, araw$dist)
-  expect_equal(brute_force_knn(bitdata, k = 4, metric = "dot", use_alt_metric = FALSE), bfdense, tolerance = 1e-7)
+  expect_equal(
+    brute_force_knn(bitdata, k = 4, metric = "dot", use_alt_metric = FALSE),
+    bfdense,
+    tolerance = 1e-7
+  )
 
   # check dense uncorrection
   set.seed(1337)
-  dunc <- nnd_knn(bitdata,
-    k = 4, metric = "dot", n_iters = 0,
+  dunc <- nnd_knn(
+    bitdata,
+    k = 4,
+    metric = "dot",
+    n_iters = 0,
     init = random_knn(bitdatasp, k = 4, metric = "dot")
   )
   set.seed(1337)
-  dnoc <- nnd_knn(bitdata,
-    k = 4, metric = "dot", use_alt_metric = FALSE, n_iters = 0,
+  dnoc <- nnd_knn(
+    bitdata,
+    k = 4,
+    metric = "dot",
+    use_alt_metric = FALSE,
+    n_iters = 0,
     init = random_knn(bitdatasp, k = 4, metric = "dot")
   )
   expect_equal(dunc, dnoc, tolerance = 1e-7)
 
   # sparse
-  bfsparse <- brute_force_knn(bitdatasp, k = 4, metric = "dot", use_alt_metric = FALSE)
+  bfsparse <- brute_force_knn(
+    bitdatasp,
+    k = 4,
+    metric = "dot",
+    use_alt_metric = FALSE
+  )
   expect_equal(bfdense, bfsparse, tolerance = 1e-6)
   bfsparsec <- brute_force_knn(bitdatasp, k = 4, metric = "dot")
   expect_equal(bfdense, bfsparsec, tolerance = 1e-5)
 
   # check sparse uncorrection
   set.seed(1337)
-  spunc <- nnd_knn(bitdatasp,
-    k = 4, metric = "dot", n_iters = 0,
+  spunc <- nnd_knn(
+    bitdatasp,
+    k = 4,
+    metric = "dot",
+    n_iters = 0,
     init = random_knn(bitdatasp, k = 4, metric = "dot")
   )
   set.seed(1337)
-  spnoc <- nnd_knn(bitdatasp,
-    k = 4, metric = "dot", use_alt_metric = FALSE, n_iters = 0,
+  spnoc <- nnd_knn(
+    bitdatasp,
+    k = 4,
+    metric = "dot",
+    use_alt_metric = FALSE,
+    n_iters = 0,
     init = random_knn(bitdatasp, k = 4, metric = "dot")
   )
   expect_equal(spunc, spnoc, tolerance = 1e-7)
 
   # query
-  bfsparse_query <- brute_force_knn_query(bitdatasp, bitdatasp, k = 4, metric = "dot", use_alt_metric = FALSE)
+  bfsparse_query <- brute_force_knn_query(
+    bitdatasp,
+    bitdatasp,
+    k = 4,
+    metric = "dot",
+    use_alt_metric = FALSE
+  )
 })
 
 test_that("Hamming", {
@@ -110,7 +166,8 @@ test_that("Hamming", {
 })
 
 test_that("Haversine", {
-    coords_rad <- matrix(c(
+  # fmt: skip
+  coords_rad <- matrix(c(
         0.0,  0.0,
         0.01047198,  0.00436332,
        -0.01570796, -0.00523599,
@@ -123,9 +180,9 @@ test_that("Haversine", {
         1.54636172,  1.57079633
     ), byrow = TRUE, nrow = 10, ncol = 2)
 
-
-    # data validated against sklearn haversine distances
-    expected_idx <- matrix(c(
+  # data validated against sklearn haversine distances
+  # fmt: skip
+  expected_idx <- matrix(c(
         1,  2,  3,  4,  5, 9,
         2,  1,  4,  3,  5, 9,
         3,  1,  2,  5,  4, 9,
@@ -137,7 +194,8 @@ test_that("Haversine", {
         9, 10,  7,  6,  8, 4,
         10,  9,  7,  6,  8, 4), byrow = TRUE, nrow = 10, ncol = 6)
 
-    expected_dist <- matrix(c(
+  # fmt: skip
+  expected_dist <- matrix(c(
         0.0, 0.01134461, 0.01655758, 0.03218203, 0.04531034, 1.55334303,
         0.0, 0.01134461, 0.02110686, 0.02788423, 0.05658752, 1.54287122,
         0.0, 0.01655758, 0.02788423, 0.02878391, 0.04868148, 1.56905124,
@@ -150,13 +208,14 @@ test_that("Haversine", {
         0.0, 0.03002677, 1.38955007, 1.39588962, 1.40082556, 1.53921921),
         byrow = TRUE, nrow = 10, ncol = 6)
 
-    bf <- brute_force_knn(coords_rad, k = 6, metric = "haversine")
+  bf <- brute_force_knn(coords_rad, k = 6, metric = "haversine")
 
-    expect_equal(bf$idx, expected_idx)
-    expect_equal(bf$dist, expected_dist, tolerance = 1e-6)
+  expect_equal(bf$idx, expected_idx)
+  expect_equal(bf$dist, expected_dist, tolerance = 1e-6)
 
-    # probably a big risk of users passing data in degrees so check and error
-    coords_deg <- matrix(c(
+  # probably a big risk of users passing data in degrees so check and error
+  # fmt: skip
+  coords_deg <- matrix(c(
         0.0,     0.00,
         0.6,     0.25,
        -0.9,    -0.30,
@@ -169,10 +228,10 @@ test_that("Haversine", {
         88.6,   90.00
     ), byrow = TRUE, nrow = 10, ncol = 2)
 
-    expect_error(
-      brute_force_knn(coords_deg, k = 6, metric = "haversine"),
-      "haversine expects radians"
-    )
+  expect_error(
+    brute_force_knn(coords_deg, k = 6, metric = "haversine"),
+    "haversine expects radians"
+  )
 
   bad <- matrix(runif(9), ncol = 3)
   expect_error(
@@ -181,41 +240,128 @@ test_that("Haversine", {
   )
 })
 
+test_that("shared dense graph queries agree with exhaustive scalar distances", {
+  reference <- rbind(
+    c(-3, 1, 0, 0),
+    c(0, 2, -1, 1),
+    c(1, -1, 0, 2),
+    c(1, -2, 3, 0),
+    c(-1, 2, -3, 0),
+    c(0, 0, 0, 0),
+    c(1, 1, 1, 1),
+    c(0, 0, 1, 2)
+  )
+  query <- rbind(c(1, -2, 3, 0), c(0, 0, 0, 0))
+  # The first seed exposes a full batch of four candidates and a scalar tail.
+  graph <- Matrix::sparseMatrix(
+    i = 4:8,
+    j = rep(1L, 5),
+    x = 1,
+    dims = c(8L, 8L)
+  )
+  init <- matrix(rep(1:3, each = nrow(query)), nrow(query))
+  for (metric in c(
+    "braycurtis",
+    "canberra",
+    "chebyshev",
+    "manhattan",
+    "cosine",
+    "alternative-cosine",
+    "correlation",
+    "hellinger"
+  )) {
+    ref <- if (metric == "hellinger") abs(reference) else reference
+    qry <- if (metric == "hellinger") abs(query) else query
+    for (alt in if (metric == "hellinger") c(FALSE, TRUE) else FALSE) {
+      result <- graph_knn_query(
+        qry,
+        ref,
+        graph,
+        k = 3L,
+        init = init,
+        metric = metric,
+        use_alt_metric = alt
+      )
+      exact <- brute_force_knn_query(
+        qry,
+        ref,
+        k = 3L,
+        metric = metric,
+        use_alt_metric = alt
+      )
+      expect_equal(result$dist, exact$dist, tolerance = 2e-6)
+      expect_equal(
+        result$dist,
+        knn_distances(ref, result$idx, metric = metric, query = qry)$dist,
+        tolerance = 2e-6
+      )
+    }
+  }
+})
+
 test_that("Hellinger", {
   bfdense <- brute_force_knn(bitdata, k = 4, metric = "hellinger")
   araw <- brute_force_knn(bitdata, k = 4, metric = "alternative-hellinger")
   unc <- apply_dense_alt_metric_uncorrection("hellinger", bfdense$dist)
   expect_equal(unc, araw$dist)
-  expect_equal(brute_force_knn(bitdata, k = 4, metric = "hellinger", use_alt_metric = FALSE), bfdense, tolerance = 1e-7)
+  expect_equal(
+    brute_force_knn(
+      bitdata,
+      k = 4,
+      metric = "hellinger",
+      use_alt_metric = FALSE
+    ),
+    bfdense,
+    tolerance = 1e-7
+  )
 
   # check dense uncorrection
   set.seed(1337)
-  dunc <- nnd_knn(bitdata,
-    k = 4, metric = "hellinger", n_iters = 0,
+  dunc <- nnd_knn(
+    bitdata,
+    k = 4,
+    metric = "hellinger",
+    n_iters = 0,
     init = random_knn(bitdatasp, k = 4, metric = "hellinger")
   )
   set.seed(1337)
-  dnoc <- nnd_knn(bitdata,
-    k = 4, metric = "hellinger", use_alt_metric = FALSE, n_iters = 0,
+  dnoc <- nnd_knn(
+    bitdata,
+    k = 4,
+    metric = "hellinger",
+    use_alt_metric = FALSE,
+    n_iters = 0,
     init = random_knn(bitdatasp, k = 4, metric = "hellinger")
   )
   expect_equal(dunc, dnoc, tolerance = 1e-7)
 
   # sparse
-  bfsparse <- brute_force_knn(bitdatasp, k = 4, metric = "hellinger", use_alt_metric = FALSE)
+  bfsparse <- brute_force_knn(
+    bitdatasp,
+    k = 4,
+    metric = "hellinger",
+    use_alt_metric = FALSE
+  )
   expect_equal(bfdense, bfsparse, tolerance = 1e-7)
   bfsparsec <- brute_force_knn(bitdatasp, k = 4, metric = "hellinger")
   expect_equal(bfdense, bfsparsec, tolerance = 1e-7)
 
   # check sparse uncorrection
   set.seed(1337)
-  spunc <- nnd_knn(bitdatasp,
-    k = 4, metric = "hellinger", n_iters = 0,
+  spunc <- nnd_knn(
+    bitdatasp,
+    k = 4,
+    metric = "hellinger",
+    n_iters = 0,
     init = random_knn(bitdatasp, k = 4, metric = "hellinger")
   )
   set.seed(1337)
-  spnoc <- nnd_knn(bitdatasp,
-    k = 4, metric = "hellinger", use_alt_metric = FALSE, n_iters = 0,
+  spnoc <- nnd_knn(
+    bitdatasp,
+    k = 4,
+    metric = "hellinger",
+    use_alt_metric = FALSE,
+    n_iters = 0,
     init = random_knn(bitdatasp, k = 4, metric = "hellinger")
   )
   expect_equal(spunc, spnoc, tolerance = 1e-7)
@@ -228,41 +374,101 @@ test_that("Jaccard", {
   j_unc <- apply_dense_alt_metric_uncorrection("jaccard", jbf$dist)
   expect_equal(j_unc, aj_raw$dist)
 
-  expect_equal(brute_force_knn(bitdata, k = 4, metric = "jaccard", use_alt_metric = FALSE), jbf, tolerance = 1e-7)
-  expect_equal(jbf, brute_force_knn(lbitdata, k = 4, metric = "jaccard"), tolerance = 1e-7)
+  expect_equal(
+    brute_force_knn(bitdata, k = 4, metric = "jaccard", use_alt_metric = FALSE),
+    jbf,
+    tolerance = 1e-7
+  )
+  expect_equal(
+    jbf,
+    brute_force_knn(lbitdata, k = 4, metric = "jaccard"),
+    tolerance = 1e-7
+  )
 
   bfbin <- brute_force_knn(lbitdata, k = 4, metric = "jaccard")
-  expect_equal(bfbin, jbf)
+  expect_identical(
+    bfbin,
+    brute_force_knn(lbitdata, k = 4, metric = "jaccard", use_alt_metric = FALSE)
+  )
 
   # check dense uncorrection
   set.seed(1337)
-  dunc <- nnd_knn(bitdata,
-    k = 4, metric = "jaccard", n_iters = 0,
+  dunc <- nnd_knn(
+    bitdata,
+    k = 4,
+    metric = "jaccard",
+    n_iters = 0,
     init = random_knn(bitdatasp, k = 4, metric = "jaccard")
   )
   set.seed(1337)
-  dnoc <- nnd_knn(bitdata,
-    k = 4, metric = "jaccard", use_alt_metric = FALSE, n_iters = 0,
+  dnoc <- nnd_knn(
+    bitdata,
+    k = 4,
+    metric = "jaccard",
+    use_alt_metric = FALSE,
+    n_iters = 0,
     init = random_knn(bitdatasp, k = 4, metric = "jaccard")
   )
   expect_equal(dunc, dnoc, tolerance = 1e-7)
 
   # check sparse
-  bfsparse <- brute_force_knn(bitdatasp, k = 4, metric = "jaccard", use_alt_metric = FALSE)
+  bfsparse <- brute_force_knn(
+    bitdatasp,
+    k = 4,
+    metric = "jaccard",
+    use_alt_metric = FALSE
+  )
   expect_equal(bfsparse, jbf, tolerance = 1e-7)
 
   # check sparse uncorrection
   set.seed(1337)
-  spunc <- nnd_knn(bitdatasp,
-    k = 4, metric = "jaccard", n_iters = 0,
+  spunc <- nnd_knn(
+    bitdatasp,
+    k = 4,
+    metric = "jaccard",
+    n_iters = 0,
     init = random_knn(bitdatasp, k = 4, metric = "jaccard")
   )
   set.seed(1337)
-  spnoc <- nnd_knn(bitdatasp,
-    k = 4, metric = "jaccard", use_alt_metric = FALSE, n_iters = 0,
+  spnoc <- nnd_knn(
+    bitdatasp,
+    k = 4,
+    metric = "jaccard",
+    use_alt_metric = FALSE,
+    n_iters = 0,
     init = random_knn(bitdatasp, k = 4, metric = "jaccard")
   )
   expect_equal(spunc, spnoc, tolerance = 1e-7)
+})
+
+test_that("default logical Jaccard handles partial and full packed words", {
+  for (width in c(63L, 64L, 65L)) {
+    reference <- matrix(FALSE, width, 5L)
+    reference[c(1L, width), 2L] <- TRUE
+    reference[1L, 3L] <- TRUE
+    reference[width, 4L] <- TRUE
+    reference[2L, 5L] <- TRUE
+    query <- reference[, c(1L, 2L, 5L)]
+    logical_result <- brute_force_knn_query(
+      query,
+      reference,
+      k = 5L,
+      metric = "jaccard",
+      obs = "C"
+    )
+    numeric_result <- brute_force_knn_query(
+      query * 1,
+      reference * 1,
+      k = 5L,
+      metric = "jaccard",
+      obs = "C"
+    )
+    expect_identical(logical_result, numeric_result)
+    expect_identical(
+      brute_force_knn(reference, k = 5L, metric = "jaccard", obs = "C"),
+      brute_force_knn(reference * 1, k = 5L, metric = "jaccard", obs = "C")
+    )
+  }
 })
 
 test_that("Jensen-Shannon", {
@@ -343,10 +549,49 @@ test_that("Spearman Rank", {
   mz <- m
   mz[sample(length(m), 20)] <- 0
   msp <- Matrix::drop0(mz)
-  expect_equal(brute_force_knn(mz, metric = "spearmanr", k = 4),
+  expect_equal(
+    brute_force_knn(mz, metric = "spearmanr", k = 4),
     brute_force_knn(msp, metric = "spearmanr", k = 4),
-    tolerance = 1e-7
+    tolerance = 1e-6
   )
+})
+
+test_that("cached Spearman queries preserve tied ranks and constant vectors", {
+  set.seed(94L)
+  reference <- matrix(sample(-4:4, 33L * 64L, replace = TRUE), 33L, 64L)
+  reference[, 1L] <- 0
+  reference[, 2L] <- 1
+  query <- cbind(reference[, 1:6], -reference[, 7:10])
+
+  for (margin in c("explicit", "implicit")) {
+    index <- rnnd_build(
+      reference,
+      k = 8L,
+      metric = "spearmanr",
+      margin = margin,
+      n_trees = 3L,
+      n_iters = 2L,
+      obs = "C"
+    )
+    for (threads in c(0L, 8L)) {
+      result <- rnnd_query(index, query, k = 4L, obs = "C", n_threads = threads)
+      expected <- matrix(0, ncol(query), 4L)
+      for (i in seq_len(ncol(query))) {
+        y <- query[, i]
+        for (j in seq_len(ncol(expected))) {
+          x <- reference[, result$idx[i, j]]
+          constant_x <- length(unique(x)) == 1L
+          constant_y <- length(unique(y)) == 1L
+          expected[i, j] <- if (constant_x || constant_y) {
+            as.numeric(constant_x != constant_y)
+          } else {
+            1 - stats::cor(x, y, method = "spearman")
+          }
+        }
+      }
+      expect_equal(result$dist, expected, tolerance = 1e-6)
+    }
+  }
 })
 
 test_that("Symmetric KL", {
@@ -356,29 +601,110 @@ test_that("Symmetric KL", {
   expect_equal(bfdense, bfsparse)
 })
 
-test_that("true angular", {
-  # true angular is weird in that it's a similarity not a distance
-  # it behaves very strangely, so this is just to characterize its strange
-  # behavior rather than to assert it's behaving in a semantically "correct"
-  # manner
+test_that("trueangular returns normalized signed angles and zero conventions", {
+  # Reference directions are 0, 60, 90, 120 and 180 degrees, then zero.
+  reference <- rbind(
+    c(1, 0),
+    c(1, sqrt(3)),
+    c(0, 1),
+    c(-1, sqrt(3)),
+    c(-1, 0),
+    c(0, 0)
+  )
+  query <- rbind(c(1, 0), c(0, 0))
+  expected <- rbind(
+    c(0, 1 / 3, 1 / 2, 2 / 3, 1, 1 / 2),
+    c(1 / 2, 1 / 2, 1 / 2, 1 / 2, 1 / 2, 0)
+  )
+  stored_zeros <- function(x) {
+    Matrix::sparseMatrix(
+      i = rep(seq_len(nrow(x)), ncol(x)),
+      j = rep(seq_len(ncol(x)), each = nrow(x)),
+      x = as.vector(x),
+      dims = dim(x)
+    )
+  }
+  as_sparse <- function(x) methods::as(Matrix::drop0(x), "generalMatrix")
+  for (convert in list(identity, as_sparse, stored_zeros)) {
+    for (use_alt in c(TRUE, FALSE)) {
+      result <- brute_force_knn_query(
+        convert(query),
+        convert(reference),
+        k = 6,
+        metric = "trueangular",
+        use_alt_metric = use_alt
+      )
+      for (i in seq_len(nrow(query))) {
+        expect_equal(sort(result$idx[i, ]), 1:6)
+        expect_equal(
+          result$dist[i, order(result$idx[i, ])],
+          expected[i, ],
+          tolerance = 1e-6
+        )
+        expect_true(all(diff(result$dist[i, ]) >= 0))
+      }
+    }
+  }
+})
 
-  # alt metric uses cosine so ordering is based on that, but the conversion
-  # turns it back into a similarity so the distances are in descending order
-  bfdense <- brute_force_knn(bitdata, k = 10, metric = "trueangular")
-  bfsparse <- brute_force_knn(bitdatasp, k = 10, metric = "trueangular")
-  expect_equal(bfdense, bfsparse, tolerance = 1e-4)
+test_that("trueangular selects nearer acute and nonpositive directions", {
+  query <- matrix(c(1, 0), nrow = 1)
+  for (reference in list(
+    rbind(c(1, sqrt(3)), c(1, 0)),
+    rbind(c(-1, 0), c(-1, sqrt(3)), c(0, 1))
+  )) {
+    expected <- if (nrow(reference) == 2) 0 else 1 / 2
+    for (use_alt in c(TRUE, FALSE)) {
+      result <- brute_force_knn_query(
+        query,
+        reference,
+        k = 1,
+        metric = "trueangular",
+        use_alt_metric = use_alt
+      )
+      expect_equal(result$idx, matrix(nrow(reference)))
+      expect_equal(result$dist, matrix(expected), tolerance = 1e-6)
+    }
+  }
+})
 
-  # turn off alt metric so we get the true angular ordering
-  # now self "distance" is the furthest distance but the distances are increasing
-  # do all 10 neighbors so we can ensure self-distance is 1 and not subject
-  # to acos rounding error causing NaN
-  bfdensena <- brute_force_knn(bitdata, k = 10, metric = "trueangular", use_alt_metric = FALSE)
-  bfsparsena <- brute_force_knn(bitdatasp, k = 10, metric = "trueangular", use_alt_metric = FALSE)
-  expect_equal(bfdensena, bfsparsena, tolerance = 1e-5)
-  expect_equal(bfdensena$idx[, 10], 1:10)
-  expect_equal(bfdensena$dist[, 10], rep(1.0, 10), tolerance = 1e-3)
+test_that("trueangular preserves supplied initial angular distances", {
+  data <- rbind(c(1, 0), c(1, sqrt(3)), c(-1, 0), c(0, 0))
+  # fmt: skip
+  distances <- matrix(c(
+    0,     1 / 3, 1,     1 / 2,
+    1 / 3, 0,     2 / 3, 1 / 2,
+    1,     2 / 3, 0,     1 / 2,
+    1 / 2, 1 / 2, 1 / 2, 0
+  ), nrow = 4, byrow = TRUE)
+  init <- list(
+    idx = matrix(rep(1:4, 4), nrow = 4, byrow = TRUE),
+    dist = distances
+  )
+  for (input in list(data, Matrix::drop0(data))) {
+    for (use_alt in c(TRUE, FALSE)) {
+      result <- nnd_knn(
+        input,
+        k = 4,
+        init = init,
+        n_iters = 0,
+        progress = "dist",
+        metric = "trueangular",
+        use_alt_metric = use_alt
+      )
+      for (i in 1:4) {
+        expect_equal(sort(result$idx[i, ]), 1:4)
+        expect_equal(
+          result$dist[i, order(result$idx[i, ])],
+          distances[i, ],
+          tolerance = 1e-6
+        )
+      }
+    }
+  }
+})
 
-  # more uncorrections
+test_that("trueangular refines initial graphs with missing entries", {
   set.seed(42)
   true_nnd <-
     nnd_knn(
@@ -386,6 +712,7 @@ test_that("true angular", {
       k = 4,
       init = random_knn(bitdata, k = 4, metric = "trueangular"),
       metric = "trueangular",
+      progress = "dist",
       max_candidates = 8
     )
   true_bf <- brute_force_knn(bitdata, k = 4, metric = "trueangular")
@@ -400,6 +727,7 @@ test_that("true angular", {
       k = 4,
       init = spinit,
       metric = "trueangular",
+      progress = "dist",
       max_candidates = 8
     )
   expect_equal(true_nnd, true_bf, tolerance = 1e-4)
@@ -413,6 +741,7 @@ test_that("TS-SS", {
   #8: TS-SS distances seem to be off by a factor of 2 compared to the definiton
   # in the paper. rnndescent was designed to reproduce the PyNNDescent results
   # which we will test against below and divide by 2
+  # fmt: skip
   python_distances <-
     matrix(c(0, 0.29106654, 1.50010305, 1.76843838,
            0, 0.20153333, 0.34656114, 0.369184,

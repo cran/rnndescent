@@ -1,3 +1,42 @@
+# rnndescent 0.3.0
+
+## New features
+
+* Use `rnnd_prepare()` to speed up repeated queries on a compatible index. To reuse the index in
+  another R session, save the original index and prepare it after loading.
+* New utilities sort and truncate neighbor graphs (`sort_knn()`, `truncate_knn()`), move or remove
+  self-neighbors (`self_first_knn()`, `remove_self_knn()`), convert graphs to sparse matrices
+  (`knn_to_sparse()`), and calculate distances for supplied neighbor indices (`knn_distances()`).
+
+## Changes that can affect results
+
+* Distance fixes cover cosine, correlation, `trueangular`, TS-SS, Hellinger, Jensen–Shannon,
+  symmetric KL, sparse Canberra on signed data, and explicitly stored zeros in sparse input. Rebuild
+  affected graphs and indexes.
+* Changes to parallel candidate selection, tree initialization, and filling missing neighbors can
+  change which neighbors are returned for the same seed. Batched dense Euclidean and cosine
+  calculations can also reorder near ties.
+* Queries on dense logical Jaccard indexes now sample up to `k` distinct reference rows when a
+  search tree supplies too few neighbors.
+
+## Performance
+
+* Faster graph and index builds, particularly for dense Euclidean, cosine, and binary data. Forests
+  built solely for initialization use less memory.
+* Faster queries for several dense metrics, including Spearman, and for prepared sparse cosine
+  indexes.
+
+## Bug fixes and input validation
+
+* `prepare_search_graph()` handles edgeless sparse graphs.
+* `prepare_search_graph()` respects degree limits when distances tie.
+* `random_knn()` preserves sampled neighbors when sorting.
+* `neighbor_overlap()` skips zeros that mark missing neighbors.
+* Stricter input validation includes rejecting negative features for Hellinger, Jensen–Shannon,
+  and symmetric KL.
+* Queries with zero observations return empty neighbor matrices.
+* Improved detection of user interrupts during long operations.
+
 # rnndescent 0.2.0
 
 ## New features
@@ -12,14 +51,15 @@ this gap (<https://github.com/jlmelville/rnndescent/issues/17>).
 
 * Much improved input validation.
 * Non-`dgCMatrix` `sparseMatrix` inputs, such as `dgRMatrix` and `dgTMatrix` are
-now normalized to `dgCMatrix` on input. Other matrices fail with a clearer error.
+  now normalized to `dgCMatrix` on input. Other matrices fail with a clearer
+  error.
 * Fix for `prepare_search_graph()` sometimes over-pruning beyond `max_degree`.
 * Fix explicit-margin RP-tree builds for `metric = "dice"` and `"hamming"` to
 use angular split geometry.
 * Fix for `rpf_build(obs = "C")` where default `n_trees` used the number of
 features not the number of observations.
-* Fix `nnd_knn()` and `graph_knn_query()` sometimes failing to completely randomly fill
-the initial search graph when needed.
+* Fix `nnd_knn()` and `graph_knn_query()` sometimes failing to completely
+  randomly fill the initial search graph when needed.
 * Fix for `prepare_search_graph(prune_reverse = TRUE)` not pruning reverse edges
 when `diversify_prob = 0`.
 * Fix for edge case when `max_search_fraction` would only result in one

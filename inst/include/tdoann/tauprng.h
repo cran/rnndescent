@@ -22,7 +22,7 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
 // CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// OF SUCH DAMAGE.
+// POSSIBILITY OF SUCH DAMAGE.
 
 // Three-component combined Tausworthe "taus88" PRNG from:
 //
@@ -87,7 +87,10 @@ public:
     return static_cast<int32_t>(state0 ^ state1 ^ state2);
   }
 
-  auto rand() -> double { return std::abs(operator()() / DINT_MAX); }
+  auto rand() -> double {
+    const double value = std::abs(operator()() / DINT_MAX);
+    return value < 1.0 ? value : std::nextafter(1.0, 0.0);
+  }
 };
 } // namespace tdoann
 #endif // TDOANN_TAUPRNG_H

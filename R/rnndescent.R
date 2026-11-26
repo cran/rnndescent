@@ -21,67 +21,21 @@
 #'   internally, so if your data columns are `logical` and intended to be used
 #'   with the specialized binary `metric`s, you should convert it to a logical
 #'   matrix first (otherwise you will get the slower dense numerical version).
+#'   Numeric feature values must be finite: `NA`, `NaN`, `Inf` and `-Inf`
+#'   are not allowed.
 #' @param k Number of nearest neighbors to build the index for. You can specify
 #'   a different number when running `rnnd_query`, but the index is calibrated
 #'   using this value so it's recommended to set `k` according to the likely
 #'   number of neighbors you will want to retrieve. Optional if `init` is
 #'   specified, in which case `k` can be inferred from the `init` data. If you
 #'   do both, then the specified version of `k` will take precedence.
-#' @param metric Type of distance calculation to use. One of:
-#'   - `"braycurtis"`
-#'   - `"canberra"`
-#'   - `"chebyshev"`
-#'   - `"correlation"` (1 minus the Pearson correlation)
-#'   - `"cosine"`
-#'   - `"dice"`
-#'   - `"euclidean"`
-#'   - `"hamming"`
-#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
-#' *radians*; an error will be raised if values that appear to be supplied in
-#' degrees are encountered)
-#'   - `"hellinger"`
-#'   - `"jaccard"`
-#'   - `"jensenshannon"`
-#'   - `"kulsinski"`
-#'   - `"sqeuclidean"` (squared Euclidean)
-#'   - `"manhattan"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"spearmanr"` (1 minus the Spearman rank correlation)
-#'   - `"symmetrickl"` (symmetric Kullback-Leibler divergence)
-#'   - `"tsss"` (Triangle Area Similarity-Sector Area Similarity or TS-SS
-#'   metric)
-#'   - `"yule"`
-#'
-#'   For non-sparse data, the following variants are available with
-#'   preprocessing: this trades memory for a potential speed up during the
-#'   distance calculation. Some minor numerical differences should be expected
-#'   compared to the non-preprocessed versions:
-#'   - `"cosine-preprocess"`: `cosine` with preprocessing.
-#'   - `"correlation-preprocess"`: `correlation` with preprocessing.
-#'
-#'   For non-sparse binary data passed as a `logical` matrix, the following
-#'   metrics have specialized variants which should be substantially faster than
-#'   the non-binary variants (in other cases the logical data will be treated as
-#'   a dense numeric vector of 0s and 1s):
-#'   - `"dice"`
-#'   - `"hamming"`
-#'   - `"jaccard"`
-#'   - `"kulsinski"`
-#'   - `"matching"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"yule"`
-#' @param use_alt_metric If `TRUE`, use faster metrics that maintain the
-#'   ordering of distances internally (e.g. squared Euclidean distances if using
-#'   `metric = "euclidean"`), then apply a correction at the end. Probably
-#'   the only reason to set this to `FALSE` is if you suspect that some
-#'   sort of numeric issue is occurring with your data in the alternative code
-#'   path.
+#' @template metric
+#' @param use_alt_metric If `TRUE`, use alternative scores such as squared
+#'   Euclidean distance internally and return distances in the requested metric.
+#'   With `metric = "jaccard"` and a dense logical matrix, construction uses
+#'   ordinary packed Jaccard.
+#'   Queries on the resulting Jaccard index use log scoring by default.
+#'   Set `use_alt_metric = FALSE` to use ordinary Jaccard for queries.
 #' @param init Name of the initialization strategy or initial `data` neighbor
 #'   graph to optimize. One of:
 #'   - `"rand"` random initialization (the default).
@@ -126,8 +80,8 @@
 #'   and offset, and then calculates the margin based on the dot product with
 #'   the hyperplane.
 #'   - `"implicit"` calculates the distance from a point to each of the
-#'   points defining the normal vector. The margin is calculated by comparing the
-#'   two distances: the point is assigned to the side of the hyperplane that
+#'   points defining the normal vector. The margin is calculated by comparing
+#'   the two distances: the point is assigned to the side of the hyperplane that
 #'   the normal vector point with the closest distance belongs to.
 #'   - `"auto"` (the default) picks the margin method depending on whether a
 #'   binary-specific `metric` such as `"bhammming"` is chosen, in which case
@@ -163,8 +117,12 @@
 #'   a small improvement in accuracy. Because this incurs a small extra cost of
 #'   counting the degree of each node, and because it tends to delay early
 #'   convergence, by default this is `FALSE`.
-#' @param n_search_trees, the number of trees to keep in the search forest as
-#'   part of index preparation. The default is `1`.
+#' @param n_search_trees The number of trees to keep for query initialization.
+#'   The default is `1`. For dense numeric Euclidean data with
+#'   `init = "tree"` and explicit margins, a single search tree uses balanced
+#'   splits informed by the neighbor graph. Otherwise, the retained trees
+#'   come from the random projection forest used for graph initialization,
+#'   when available.
 #' @param diversify_prob the degree of diversification of the search graph
 #'   by removing unnecessary edges through occlusion pruning. This should take a
 #'   value between `0` (no diversification) and `1` (remove as many edges as
@@ -229,7 +187,8 @@
 #' \doi{10.1145/1374376.1374452}.
 #'
 #' Dong, W., Moses, C., & Li, K. (2011, March).
-#' Efficient k-nearest neighbor graph construction for generic similarity measures.
+#' Efficient k-nearest neighbor graph construction for generic similarity
+#' measures.
 #' In *Proceedings of the 20th international conference on World Wide Web*
 #' (pp. 577-586).
 #' ACM.
@@ -237,40 +196,53 @@
 #'
 #' Harwood, B., & Drummond, T. (2016).
 #' Fanng: Fast approximate nearest neighbour graphs.
-#' In *Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition*
+#' In *Proceedings of the IEEE Conference on Computer Vision and Pattern
+#' Recognition*
 #' (pp. 5713-5722).
 #' @export
-rnnd_build <- function(data,
-                       k = 30,
-                       metric = "euclidean",
-                       use_alt_metric = TRUE,
-                       init = "tree",
-                       n_trees = NULL,
-                       leaf_size = NULL,
-                       max_tree_depth = 200,
-                       margin = "auto",
-                       n_iters = NULL,
-                       delta = 0.001,
-                       max_candidates = NULL,
-                       low_memory = TRUE,
-                       weight_by_degree = FALSE,
-                       n_search_trees = 1,
-                       pruning_degree_multiplier = 1.5,
-                       diversify_prob = 1.0,
-                       prune_reverse = FALSE,
-                       n_threads = 0,
-                       verbose = FALSE,
-                       progress = "bar",
-                       obs = "R") {
+rnnd_build <- function(
+  data,
+  k = 30,
+  metric = "euclidean",
+  use_alt_metric = TRUE,
+  init = "tree",
+  n_trees = NULL,
+  leaf_size = NULL,
+  max_tree_depth = 200,
+  margin = "auto",
+  n_iters = NULL,
+  delta = 0.001,
+  max_candidates = NULL,
+  low_memory = TRUE,
+  weight_by_degree = FALSE,
+  n_search_trees = 1,
+  pruning_degree_multiplier = 1.5,
+  diversify_prob = 1.0,
+  prune_reverse = FALSE,
+  n_threads = 0,
+  verbose = FALSE,
+  progress = "bar",
+  obs = "R"
+) {
   obs <- match.arg(toupper(obs), c("C", "R"))
   n_threads <- check_n_threads(n_threads)
   n_search_trees <- check_count(n_search_trees, "n_search_trees")
-  data <- x2m(data)
+  data <- x2m(data, obs)
   if (obs == "R") {
     data <- Matrix::t(data)
   }
 
-  index <- nnd_knn(
+  use_hub_tree <- n_search_trees == 1L &&
+    identical(metric, "euclidean") &&
+    is.matrix(data) &&
+    is.numeric(data) &&
+    is.character(init) &&
+    length(init) == 1L &&
+    tolower(init) %in% "tree" &&
+    length(margin) == 1L &&
+    tolower(margin) %in% c("auto", "explicit")
+
+  index <- nnd_knn_prepared(
     data,
     k = k,
     metric = metric,
@@ -282,7 +254,7 @@ rnnd_build <- function(data,
       max_tree_depth = max_tree_depth,
       margin = margin
     ),
-    ret_forest = TRUE,
+    ret_forest = !use_hub_tree,
     n_iters = n_iters,
     delta = delta,
     max_candidates = max_candidates,
@@ -290,8 +262,7 @@ rnnd_build <- function(data,
     weight_by_degree = weight_by_degree,
     n_threads = n_threads,
     verbose = verbose,
-    progress = progress,
-    obs = "C"
+    progress = progress
   )
 
   index <- list(
@@ -311,7 +282,28 @@ rnnd_build <- function(data,
   index$original_metric <- metric
   index$use_alt_metric <- use_alt_metric
 
-  if (!is.null(index$forest)) {
+  if (use_hub_tree) {
+    tsmessage("Building balanced hub tree for query initialization")
+    degree <- rnn_reverse_nbr_size(
+      index$graph$idx,
+      ncol(index$graph$idx),
+      ncol(data)
+    )
+    search_forest <- rnn_hub_forest_build(
+      data,
+      degree = degree,
+      metric = if (use_alt_metric) "sqeuclidean" else "euclidean",
+      leaf_size = if (is.null(leaf_size)) max(10, k) else leaf_size,
+      max_tree_depth = max_tree_depth,
+      n_threads = n_threads
+    )
+    index$search_forest <- set_forest_data(
+      search_forest,
+      use_alt_metric,
+      metric,
+      FALSE
+    )
+  } else if (!is.null(index$forest)) {
     index$search_forest <-
       rpf_filter(
         nn = index$graph,
@@ -322,7 +314,11 @@ rnnd_build <- function(data,
       )
   }
 
-  search_graph <- prepare_search_graph(
+  check_search_graph_controls(
+    index$prep$diversify_prob,
+    index$prep$pruning_degree_multiplier
+  )
+  search_graph <- prepare_search_graph_impl(
     data = index$data,
     graph = index$graph,
     metric = index$original_metric,
@@ -331,8 +327,7 @@ rnnd_build <- function(data,
     pruning_degree_multiplier = index$prep$pruning_degree_multiplier,
     prune_reverse = index$prep$prune_reverse,
     n_threads = n_threads,
-    verbose = verbose,
-    obs = "C"
+    verbose = verbose
   )
   index$prep$is_prepared <- TRUE
   index$search_graph <- search_graph
@@ -340,6 +335,227 @@ rnnd_build <- function(data,
   # RP Forests can be large so after preparation we delete this
   index$forest <- NULL
   index
+}
+
+#' Prepare an index for repeated queries
+#'
+#' Copy an index into native memory once and pass the returned handle to
+#' [rnnd_query()] for repeated queries. Dense numeric indexes
+#' support the dense metrics with an explicit search forest. Dense logical
+#' indexes support packed binary metrics with an implicit search forest.
+#' Sparse indexes support the sparse metrics with either explicit or implicit
+#' search forests.
+#'
+#' @param index An index from [rnnd_build()] with a
+#'   compatible search forest.
+#' @return A prepared index handle for use in the current R session.
+#' @details
+#' The handle owns a snapshot of the reference, search graph and forest. Changes
+#' to the original index require a new call to `rnnd_prepare()`. Garbage
+#' collection releases the native memory when the handle is no longer in use.
+#' Unloading the package also releases the snapshot and invalidates the handle.
+#' To use the index in another session, save the original index and prepare it
+#' again after loading it.
+#'
+#' Preparation applies any metric-specific reference preprocessing once.
+#' For dense `"spearmanr"`, the native snapshot stores reference ranks and
+#' queries rank their features once for distance scoring. Dense logical
+#' preparation packs the reference once and packs only the incoming queries
+#' on subsequent calls. Graph traversal uses the same distance kernels as
+#' ordinary queries. Floating-point rounding can differ for dense numeric
+#' indexes and may affect the ordering of near ties.
+#' @seealso [rnnd_query()], [rnnd_build()]
+#' @examples
+#' index <- rnnd_build(iris[1:75, ], k = 5)
+#' prepared <- rnnd_prepare(index)
+#' rnnd_query(prepared, iris[76:80, ], k = 5)
+#' @export
+rnnd_prepare <- function(index) {
+  if (!is.list(index)) {
+    stop("index must be an index from rnnd_build()")
+  }
+  reference <- index$data
+  forest <- index$search_forest
+  sparse <- is_sparse(reference)
+  logical_index <- is.matrix(reference) && is.logical(reference)
+  if (sparse) {
+    reference <- x2m(reference, "C", "reference")
+    if (ncol(reference) == 0L) {
+      stop("rnnd_prepare() requires a nonempty sparse index")
+    }
+  } else if (
+    !is.matrix(reference) ||
+      is.object(reference) ||
+      !(logical_index || is.double(reference) || is.integer(reference)) ||
+      length(reference) == 0L
+  ) {
+    if (logical_index) {
+      stop("rnnd_prepare() requires a nonempty dense logical index")
+    }
+    stop("rnnd_prepare() requires a nonempty dense numeric index")
+  }
+  margins <- if (sparse) {
+    c("explicit", "implicit")
+  } else if (logical_index) {
+    "implicit"
+  } else {
+    "explicit"
+  }
+  forest_type <- if (sparse) {
+    "sparse"
+  } else if (logical_index) {
+    "implicit logical"
+  } else {
+    "explicit dense"
+  }
+  if (
+    !is.list(forest) ||
+      !isTRUE(is_rpforest(forest)) ||
+      !isTRUE(forest$margin %in% margins) ||
+      !is.character(forest$original_metric) ||
+      length(forest$original_metric) != 1L ||
+      is.na(forest$original_metric) ||
+      !identical(forest$original_metric, index$original_metric)
+  ) {
+    stop("rnnd_prepare() requires a compatible ", forest_type, " search forest")
+  }
+  metric <- forest$original_metric
+  actual_metric <- forest_scoring_metric(forest)
+  use_alt_metric <- forest$use_alt_metric
+  if (
+    !identical(
+      actual_metric,
+      get_actual_metric(use_alt_metric, metric, reference, FALSE)
+    )
+  ) {
+    stop(
+      "rnnd_prepare() requires a compatible ",
+      forest_type,
+      " search forest metric"
+    )
+  }
+  metric_correction <- if (use_alt_metric && metric != actual_metric) metric
+  check_rpforest_matches_reference(
+    forest,
+    ncol(reference),
+    nrow(reference),
+    sparse
+  )
+  graph <- check_reference_graph_size(index$search_graph, ncol(reference))
+  graph <- if (is.list(graph)) graph_to_list(graph) else tcsparse_to_list(graph)
+  if (sparse) {
+    return(structure(
+      rnn_prepare_sparse_index(
+        reference@i,
+        reference@p,
+        reference@x,
+        nrow(reference),
+        graph,
+        forest,
+        actual_metric
+      ),
+      class = c(
+        "rnndescent_prepared_sparse_index",
+        "rnndescent_prepared_index"
+      ),
+      metric_correction = metric_correction
+    ))
+  }
+  if (logical_index) {
+    return(structure(
+      rnn_prepare_logical_index(reference, graph, forest, actual_metric),
+      class = c(
+        "rnndescent_prepared_logical_index",
+        "rnndescent_prepared_index"
+      ),
+      metric_correction = metric_correction
+    ))
+  }
+  structure(
+    rnn_prepare_dense_index(reference, graph, forest, actual_metric),
+    class = "rnndescent_prepared_index",
+    metric_correction = metric_correction
+  )
+}
+
+query_prepared_index <- function(
+  index,
+  query,
+  k,
+  epsilon,
+  max_search_fraction,
+  n_threads,
+  verbose
+) {
+  sparse <- inherits(index, "rnndescent_prepared_sparse_index")
+  logical_index <- inherits(index, "rnndescent_prepared_logical_index")
+  if (sparse) {
+    k <- check_count(k, "k", max = .Machine$integer.max)
+    if (!is_sparse(query)) {
+      stop("Prepared sparse indexes require a sparse query")
+    }
+  } else if (logical_index) {
+    if (!is.matrix(query) || !is.logical(query)) {
+      stop("Prepared logical indexes require a dense logical query")
+    }
+    k <- check_count(k, "k", max = .Machine$integer.max)
+  } else {
+    if (!is.matrix(query) || !(is.double(query) || is.integer(query))) {
+      stop("Prepared indexes require a dense numeric query")
+    }
+    k <- check_count(k, "k", max = .Machine$integer.max)
+  }
+  metric <- attr(index, "metric_correction", exact = TRUE)
+  convert_seed_distances <- if (!is.null(metric)) {
+    function(dist) {
+      apply_alt_metric_uncorrection(
+        metric,
+        apply_alt_metric_correction(metric, dist, sparse),
+        sparse
+      )
+    }
+  }
+  result <- if (sparse) {
+    rnn_query_prepared_sparse(
+      index,
+      query@i,
+      query@p,
+      query@x,
+      nrow(query),
+      k,
+      epsilon,
+      max_search_fraction,
+      n_threads,
+      verbose,
+      convert_seed_distances
+    )
+  } else if (logical_index) {
+    rnn_query_prepared_logical(
+      index,
+      query,
+      k,
+      epsilon,
+      max_search_fraction,
+      n_threads,
+      verbose,
+      convert_seed_distances
+    )
+  } else {
+    rnn_query_prepared(
+      index,
+      query,
+      k,
+      epsilon,
+      max_search_fraction,
+      n_threads,
+      verbose,
+      convert_seed_distances
+    )
+  }
+  if (!is.null(metric)) {
+    result$dist <- apply_alt_metric_correction(metric, result$dist, sparse)
+  }
+  result
 }
 
 #' Query an index for approximate nearest neighbors
@@ -351,7 +567,11 @@ rnnd_build <- function(data,
 #' total number of distance calculations can also be bounded, similar to the
 #' method of Harwood and Drummond (2016).
 #'
-#' @param index A nearest neighbor index produced by [rnnd_build()].
+#' @param index A nearest neighbor index produced by
+#'   [rnnd_build()] or a prepared index from
+#'   [rnnd_prepare()]. Prepared sparse indexes require sparse
+#'   query data. Prepared dense logical indexes require dense logical query
+#'   data.
 #' @param query Matrix of `n` query items, with observations in the rows and
 #'   features in the columns. Optionally, the data may be passed with the
 #'   observations in the columns, by setting `obs = "C"`, which should be more
@@ -363,6 +583,8 @@ rnnd_build <- function(data,
 #'   matrix first (otherwise you will get the slower dense numerical version).
 #'   Sparse and non-sparse data cannot be mixed, so if the data used to build
 #'   index was sparse, the `query` data must also be sparse. and vice versa.
+#'   Numeric feature values must be finite: `NA`, `NaN`, `Inf` and `-Inf`
+#'   are not allowed.
 #' @param k Number of nearest neighbors to return.
 #' @param epsilon Controls trade-off between accuracy and search cost, as
 #'   described by Iwasaki and Miyazaki (2018). Setting `epsilon` to a positive
@@ -385,7 +607,8 @@ rnnd_build <- function(data,
 #'  data has been searched. Default is 1.
 #' @param n_threads Number of threads to use.
 #' @param init An optional matrix of `k` initial nearest neighbors for each
-#'  query point.
+#'   query point. A prepared index requires `init = NULL` and uses its search
+#'   forest to initialize the query.
 #' @param verbose If `TRUE`, log information to the console.
 #' @param obs set to `"C"` to indicate that the input `data` orientation stores
 #'   each observation as a column. The default `"R"` means that observations are
@@ -396,7 +619,7 @@ rnnd_build <- function(data,
 #' @return the approximate nearest neighbor index, a list containing:
 #'  * `idx` an n by k matrix containing the nearest neighbor indices.
 #'  * `dist` an n by k matrix containing the nearest neighbor distances.
-#' @seealso [rnnd_query()]
+#' @seealso [rnnd_prepare()]
 #' @examples
 #' iris_even <- iris[seq_len(nrow(iris)) %% 2 == 0, ]
 #' iris_odd <- iris[seq_len(nrow(iris)) %% 2 == 1, ]
@@ -407,51 +630,123 @@ rnnd_build <- function(data,
 #' @references
 #' Harwood, B., & Drummond, T. (2016).
 #' Fanng: Fast approximate nearest neighbour graphs.
-#' In *Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition*
+#' In *Proceedings of the IEEE Conference on Computer Vision and Pattern
+#' Recognition*
 #' (pp. 5713-5722).
 #'
 #' Iwasaki, M., & Miyazaki, D. (2018).
-#' Optimization of indexing based on k-nearest neighbor graph for proximity search in high-dimensional data.
+#' Optimization of indexing based on k-nearest neighbor graph for proximity
+#' search in high-dimensional data.
 #' *arXiv preprint* *arXiv:1810.07355*.
 #' <https://arxiv.org/abs/1810.07355>
 #' @export
 rnnd_query <-
-  function(index,
-           query,
-           k = 30,
-           epsilon = 0.1,
-           max_search_fraction = 1,
-           init = NULL,
-           n_threads = 0,
-           verbose = FALSE,
-           obs = "R") {
+  function(
+    index,
+    query,
+    k = 30,
+    epsilon = 0.1,
+    max_search_fraction = 1,
+    init = NULL,
+    n_threads = 0,
+    verbose = FALSE,
+    obs = "R"
+  ) {
     obs <- match.arg(toupper(obs), c("C", "R"))
     n_threads <- check_n_threads(n_threads)
-    if (is.null(init) && !is.null(index$search_forest)) {
+    prepared <- inherits(index, "rnndescent_prepared_index")
+    if (!prepared && is.null(init) && !is.null(index$search_forest)) {
       init <- index$search_forest
     }
 
-    query <- x2m(query)
+    query <- x2m(query, obs, "query")
     if (obs == "R") {
       query <- Matrix::t(query)
     }
-    res <- graph_knn_query(
-      query = query,
-      reference = index$data,
-      reference_graph = index$search_graph,
-      k = k,
-      metric = index$original_metric,
-      init = init,
-      epsilon = epsilon,
-      max_search_fraction = max_search_fraction,
-      use_alt_metric = index$use_alt_metric,
-      n_threads = n_threads,
-      verbose = verbose,
-      obs = "C"
+    check_query_search_controls(epsilon, max_search_fraction)
+    if (prepared) {
+      if (!is.null(init)) {
+        stop("init must be NULL when querying a prepared index")
+      }
+      return(query_prepared_index(
+        index,
+        query,
+        k,
+        epsilon,
+        max_search_fraction,
+        n_threads,
+        verbose
+      ))
+    }
+    check_sparse(index$data, query)
+    reference <- index$data
+    check_reference_during_copy <- can_validate_reference_on_copy(
+      reference,
+      index$original_metric,
+      init
     )
-    res
+    if (!check_reference_during_copy) {
+      reference <- x2m(reference, "C", "reference")
+    }
+    check_matching_features(reference, query, "C")
+    search <- function(prepared_query = NULL) {
+      graph_knn_query_impl(
+        query = query,
+        reference = reference,
+        reference_graph = index$search_graph,
+        k = k,
+        metric = index$original_metric,
+        init = init,
+        epsilon = epsilon,
+        max_search_fraction = max_search_fraction,
+        use_alt_metric = index$use_alt_metric,
+        n_threads = n_threads,
+        verbose = verbose,
+        check_reference_during_copy = check_reference_during_copy,
+        prepared_query = prepared_query
+      )
+    }
+    if (is.list(init) && is_rpforest(init)) {
+      return(rnn_with_prepared_query(search))
+    }
+    search()
   }
 
+
+# A native copy can validate the reference only if it is the first consumer.
+# Random initialization and indices without distances may score it earlier.
+can_validate_reference_on_copy <- function(reference, metric, init) {
+  if (
+    !is.matrix(reference) ||
+      !is.double(reference) ||
+      is.object(reference) ||
+      length(reference) == 0L ||
+      !is.list(init) ||
+      is.object(init) ||
+      !(identical(metric, "euclidean") || identical(metric, "cosine"))
+  ) {
+    return(FALSE)
+  }
+  if (is_rpforest(init)) {
+    if (
+      !identical(init$margin, "explicit") ||
+        !identical(init$original_metric, metric)
+    ) {
+      return(FALSE)
+    }
+    if (identical(metric, "cosine")) {
+      return(
+        identical(init$actual_metric, "cosine") ||
+          identical(init$actual_metric, "alternative-cosine")
+      )
+    }
+    return(
+      identical(init$actual_metric, "sqeuclidean") ||
+        identical(init$actual_metric, "euclidean")
+    )
+  }
+  identical(metric, "euclidean") && !is.null(init$idx) && !is.null(init$dist)
+}
 
 #' Find approximate nearest neighbors
 #'
@@ -475,63 +770,15 @@ rnnd_query <-
 #'   internally, so if your data columns are `logical` and intended to be used
 #'   with the specialized binary `metric`s, you should convert it to a logical
 #'   matrix first (otherwise you will get the slower dense numerical version).
+#'   Numeric feature values must be finite: `NA`, `NaN`, `Inf` and `-Inf`
+#'   are not allowed.
 #' @param k Number of nearest neighbors to return. Optional if `init` is
 #'   specified.
-#' @param metric Type of distance calculation to use. One of:
-#'   - `"braycurtis"`
-#'   - `"canberra"`
-#'   - `"chebyshev"`
-#'   - `"correlation"` (1 minus the Pearson correlation)
-#'   - `"cosine"`
-#'   - `"dice"`
-#'   - `"euclidean"`
-#'   - `"hamming"`
-#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
-#' *radians*; an error will be raised if values that appear to be supplied in
-#' degrees are encountered)
-#'   - `"hellinger"`
-#'   - `"jaccard"`
-#'   - `"jensenshannon"`
-#'   - `"kulsinski"`
-#'   - `"sqeuclidean"` (squared Euclidean)
-#'   - `"manhattan"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"spearmanr"` (1 minus the Spearman rank correlation)
-#'   - `"symmetrickl"` (symmetric Kullback-Leibler divergence)
-#'   - `"tsss"` (Triangle Area Similarity-Sector Area Similarity or TS-SS
-#'   metric)
-#'   - `"yule"`
-#'
-#'   For non-sparse data, the following variants are available with
-#'   preprocessing: this trades memory for a potential speed up during the
-#'   distance calculation. Some minor numerical differences should be expected
-#'   compared to the non-preprocessed versions:
-#'   - `"cosine-preprocess"`: `cosine` with preprocessing.
-#'   - `"correlation-preprocess"`: `correlation` with preprocessing.
-#'
-#'   For non-sparse binary data passed as a `logical` matrix, the following
-#'   metrics have specialized variants which should be substantially faster than
-#'   the non-binary variants (in other cases the logical data will be treated as
-#'   a dense numeric vector of 0s and 1s):
-#'   - `"dice"`
-#'   - `"hamming"`
-#'   - `"jaccard"`
-#'   - `"kulsinski"`
-#'   - `"matching"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"yule"`
-#' @param use_alt_metric If `TRUE`, use faster metrics that maintain the
-#'   ordering of distances internally (e.g. squared Euclidean distances if using
-#'   `metric = "euclidean"`), then apply a correction at the end. Probably
-#'   the only reason to set this to `FALSE` is if you suspect that some
-#'   sort of numeric issue is occurring with your data in the alternative code
-#'   path.
+#' @template metric
+#' @param use_alt_metric If `TRUE`, use alternative scores such as squared
+#'   Euclidean distance internally and return distances in the requested metric.
+#'   With `metric = "jaccard"` and a dense logical matrix, construction uses
+#'   ordinary packed Jaccard.
 #' @param init Name of the initialization strategy or initial `data` neighbor
 #'   graph to optimize. One of:
 #'   - `"rand"` random initialization (the default).
@@ -576,8 +823,8 @@ rnnd_query <-
 #'   and offset, and then calculates the margin based on the dot product with
 #'   the hyperplane.
 #'   - `"implicit"` calculates the distance from a point to each of the
-#'   points defining the normal vector. The margin is calculated by comparing the
-#'   two distances: the point is assigned to the side of the hyperplane that
+#'   points defining the normal vector. The margin is calculated by comparing
+#'   the two distances: the point is assigned to the side of the hyperplane that
 #'   the normal vector point with the closest distance belongs to.
 #'   - `"auto"` (the default) picks the margin method depending on whether a
 #'   binary-specific `metric` such as `"bhammming"` is chosen, in which case
@@ -643,39 +890,42 @@ rnnd_query <-
 #' \doi{10.1145/1374376.1374452}.
 #'
 #' Dong, W., Moses, C., & Li, K. (2011, March).
-#' Efficient k-nearest neighbor graph construction for generic similarity measures.
+#' Efficient k-nearest neighbor graph construction for generic similarity
+#' measures.
 #' In *Proceedings of the 20th international conference on World Wide Web*
 #' (pp. 577-586).
 #' ACM.
 #' \doi{10.1145/1963405.1963487}.
 #'
 #' @export
-rnnd_knn <- function(data,
-                     k = 30,
-                     metric = "euclidean",
-                     use_alt_metric = TRUE,
-                     init = "tree",
-                     n_trees = NULL,
-                     leaf_size = NULL,
-                     max_tree_depth = 200,
-                     margin = "auto",
-                     n_iters = NULL,
-                     delta = 0.001,
-                     max_candidates = NULL,
-                     weight_by_degree = FALSE,
-                     low_memory = TRUE,
-                     n_threads = 0,
-                     verbose = FALSE,
-                     progress = "bar",
-                     obs = "R") {
+rnnd_knn <- function(
+  data,
+  k = 30,
+  metric = "euclidean",
+  use_alt_metric = TRUE,
+  init = "tree",
+  n_trees = NULL,
+  leaf_size = NULL,
+  max_tree_depth = 200,
+  margin = "auto",
+  n_iters = NULL,
+  delta = 0.001,
+  max_candidates = NULL,
+  weight_by_degree = FALSE,
+  low_memory = TRUE,
+  n_threads = 0,
+  verbose = FALSE,
+  progress = "bar",
+  obs = "R"
+) {
   obs <- match.arg(toupper(obs), c("C", "R"))
   n_threads <- check_n_threads(n_threads)
-  data <- x2m(data)
+  data <- x2m(data, obs)
   if (obs == "R") {
     data <- Matrix::t(data)
   }
 
-  nnd_knn(
+  nnd_knn_prepared(
     data,
     k = k,
     metric = metric,
@@ -695,8 +945,7 @@ rnnd_knn <- function(data,
     weight_by_degree = weight_by_degree,
     n_threads = n_threads,
     verbose = verbose,
-    progress = progress,
-    obs = "C"
+    progress = progress
   )
 }
 
@@ -723,62 +972,14 @@ rnnd_knn <- function(data,
 #'   internally, so if your data columns are `logical` and intended to be used
 #'   with the specialized binary `metric`s, you should convert it to a logical
 #'   matrix first (otherwise you will get the slower dense numerical version).
+#'   Numeric feature values must be finite: `NA`, `NaN`, `Inf` and `-Inf`
+#'   are not allowed.
 #' @param k Number of nearest neighbors to return.
-#' @param metric Type of distance calculation to use. One of:
-#'   - `"braycurtis"`
-#'   - `"canberra"`
-#'   - `"chebyshev"`
-#'   - `"correlation"` (1 minus the Pearson correlation)
-#'   - `"cosine"`
-#'   - `"dice"`
-#'   - `"euclidean"`
-#'   - `"hamming"`
-#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
-#' *radians*; an error will be raised if values that appear to be supplied in
-#' degrees are encountered)
-#'   - `"hellinger"`
-#'   - `"jaccard"`
-#'   - `"jensenshannon"`
-#'   - `"kulsinski"`
-#'   - `"sqeuclidean"` (squared Euclidean)
-#'   - `"manhattan"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"spearmanr"` (1 minus the Spearman rank correlation)
-#'   - `"symmetrickl"` (symmetric Kullback-Leibler divergence)
-#'   - `"tsss"` (Triangle Area Similarity-Sector Area Similarity or TS-SS
-#'   metric)
-#'   - `"yule"`
-#'
-#'   For non-sparse data, the following variants are available with
-#'   preprocessing: this trades memory for a potential speed up during the
-#'   distance calculation. Some minor numerical differences should be expected
-#'   compared to the non-preprocessed versions:
-#'   - `"cosine-preprocess"`: `cosine` with preprocessing.
-#'   - `"correlation-preprocess"`: `correlation` with preprocessing.
-#'
-#'   For non-sparse binary data passed as a `logical` matrix, the following
-#'   metrics have specialized variants which should be substantially faster than
-#'   the non-binary variants (in other cases the logical data will be treated as
-#'   a dense numeric vector of 0s and 1s):
-#'   - `"dice"`
-#'   - `"hamming"`
-#'   - `"jaccard"`
-#'   - `"kulsinski"`
-#'   - `"matching"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"yule"`
-#' @param use_alt_metric If `TRUE`, use faster metrics that maintain the
-#'   ordering of distances internally (e.g. squared Euclidean distances if using
-#'   `metric = "euclidean"`), then apply a correction at the end. Probably
-#'   the only reason to set this to `FALSE` is if you suspect that some
-#'   sort of numeric issue is occurring with your data in the alternative code
-#'   path.
+#' @template metric
+#' @param use_alt_metric If `TRUE`, use alternative scores such as squared
+#'   Euclidean distance internally and return distances in the requested metric.
+#'   With `metric = "jaccard"` and a dense logical matrix, construction uses
+#'   ordinary packed Jaccard.
 #' @param n_threads Number of threads to use.
 #' @param verbose If `TRUE`, log information to the console.
 #' @param obs set to `"C"` to indicate that the input `data` orientation stores
@@ -805,25 +1006,29 @@ rnnd_knn <- function(data,
 #' # Use verbose flag to see information about progress
 #' iris_nn <- brute_force_knn(iris, k = 4, metric = "euclidean", verbose = TRUE)
 #' @export
-brute_force_knn <- function(data,
-                            k,
-                            metric = "euclidean",
-                            use_alt_metric = TRUE,
-                            n_threads = 0,
-                            verbose = FALSE,
-                            obs = "R") {
+brute_force_knn <- function(
+  data,
+  k,
+  metric = "euclidean",
+  use_alt_metric = TRUE,
+  n_threads = 0,
+  verbose = FALSE,
+  obs = "R"
+) {
   obs <- match.arg(toupper(obs), c("C", "R"))
   n_threads <- check_n_threads(n_threads)
-  n_obs <- switch(obs,
-    R = nrow,
-    C = ncol,
-    stop("Unknown obs type")
-  )
+  n_obs <- switch(obs, R = nrow, C = ncol, stop("Unknown obs type"))
 
-  data <- x2m(data)
+  data <- x2m(data, obs)
   check_k(k, n_obs(data))
 
-  actual_metric <- get_actual_metric(use_alt_metric, metric, data, verbose)
+  actual_metric <- get_actual_metric(
+    use_alt_metric,
+    metric,
+    data,
+    verbose,
+    for_build = TRUE
+  )
 
   tsmessage(
     thread_msg(
@@ -849,7 +1054,8 @@ brute_force_knn <- function(data,
       )
   } else if (is.logical(data)) {
     res <-
-      rnn_logical_brute_force(data,
+      rnn_logical_brute_force(
+        data,
         k,
         actual_metric,
         n_threads = n_threads,
@@ -857,7 +1063,8 @@ brute_force_knn <- function(data,
       )
   } else {
     res <-
-      rnn_brute_force(data,
+      rnn_brute_force(
+        data,
         k,
         actual_metric,
         n_threads = n_threads,
@@ -867,7 +1074,7 @@ brute_force_knn <- function(data,
 
   res$idx <- res$idx + 1
 
-  if (use_alt_metric) {
+  if (metric != actual_metric) {
     res$dist <-
       apply_alt_metric_correction(metric, res$dist, is_sparse(data))
   }
@@ -891,62 +1098,14 @@ brute_force_knn <- function(data,
 #'   used with the specialized binary `metric`s, you should convert it to a
 #'   logical matrix first (otherwise you will get the slower dense numerical
 #'   version).
+#'   Numeric feature values must be finite: `NA`, `NaN`, `Inf` and `-Inf`
+#'   are not allowed.
 #' @param k Number of nearest neighbors to return.
-#' @param metric Type of distance calculation to use. One of:
-#'   - `"braycurtis"`
-#'   - `"canberra"`
-#'   - `"chebyshev"`
-#'   - `"correlation"` (1 minus the Pearson correlation)
-#'   - `"cosine"`
-#'   - `"dice"`
-#'   - `"euclidean"`
-#'   - `"hamming"`
-#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
-#' *radians*; an error will be raised if values that appear to be supplied in
-#' degrees are encountered)
-#'   - `"hellinger"`
-#'   - `"jaccard"`
-#'   - `"jensenshannon"`
-#'   - `"kulsinski"`
-#'   - `"sqeuclidean"` (squared Euclidean)
-#'   - `"manhattan"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"spearmanr"` (1 minus the Spearman rank correlation)
-#'   - `"symmetrickl"` (symmetric Kullback-Leibler divergence)
-#'   - `"tsss"` (Triangle Area Similarity-Sector Area Similarity or TS-SS
-#'   metric)
-#'   - `"yule"`
-#'
-#'   For non-sparse data, the following variants are available with
-#'   preprocessing: this trades memory for a potential speed up during the
-#'   distance calculation. Some minor numerical differences should be expected
-#'   compared to the non-preprocessed versions:
-#'   - `"cosine-preprocess"`: `cosine` with preprocessing.
-#'   - `"correlation-preprocess"`: `correlation` with preprocessing.
-#'
-#'   For non-sparse binary data passed as a `logical` matrix, the following
-#'   metrics have specialized variants which should be substantially faster than
-#'   the non-binary variants (in other cases the logical data will be treated as
-#'   a dense numeric vector of 0s and 1s):
-#'   - `"dice"`
-#'   - `"hamming"`
-#'   - `"jaccard"`
-#'   - `"kulsinski"`
-#'   - `"matching"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"yule"`
-#' @param use_alt_metric If `TRUE`, use faster metrics that maintain the
-#'   ordering of distances internally (e.g. squared Euclidean distances if using
-#'   `metric = "euclidean"`), then apply a correction at the end. Probably
-#'   the only reason to set this to `FALSE` is if you suspect that some
-#'   sort of numeric issue is occurring with your data in the alternative code
-#'   path.
+#' @template metric
+#' @param use_alt_metric If `TRUE`, use alternative scores such as squared
+#'   Euclidean distance internally and return distances in the requested metric.
+#'   With `metric = "jaccard"` and a dense logical matrix, construction uses
+#'   ordinary packed Jaccard.
 #' @param order_by_distance If `TRUE` (the default), then results for each
 #'   item are returned by increasing distance. If you don't need the results
 #'   sorted, e.g. you are going to pass the results as initialization to another
@@ -980,28 +1139,34 @@ brute_force_knn <- function(data,
 #'
 #' # These results can be improved by nearest neighbors descent. You don't need
 #' # to specify k here because this is worked out from the initial input
-#' iris_nn <- nnd_knn(iris, init = iris_nn, metric = "euclidean", verbose = TRUE)
+#' iris_nn <- nnd_knn(
+#'   iris, init = iris_nn, metric = "euclidean", verbose = TRUE
+#' )
 #' @export
 random_knn <-
-  function(data,
-           k,
-           metric = "euclidean",
-           use_alt_metric = TRUE,
-           order_by_distance = TRUE,
-           n_threads = 0,
-           verbose = FALSE,
-           obs = "R") {
+  function(
+    data,
+    k,
+    metric = "euclidean",
+    use_alt_metric = TRUE,
+    order_by_distance = TRUE,
+    n_threads = 0,
+    verbose = FALSE,
+    obs = "R"
+  ) {
     obs <- match.arg(toupper(obs), c("C", "R"))
     n_threads <- check_n_threads(n_threads)
-    n_obs <- switch(obs,
-      R = nrow,
-      C = ncol,
-      stop("Unknown obs type")
-    )
-    data <- x2m(data)
+    n_obs <- switch(obs, R = nrow, C = ncol, stop("Unknown obs type"))
+    data <- x2m(data, obs)
     check_k(k, n_obs(data))
 
-    actual_metric <- get_actual_metric(use_alt_metric, metric, data, verbose)
+    actual_metric <- get_actual_metric(
+      use_alt_metric,
+      metric,
+      data,
+      verbose,
+      for_build = TRUE
+    )
 
     if (obs == "R") {
       data <- Matrix::t(data)
@@ -1016,7 +1181,7 @@ random_knn <-
     )
     res$idx <- res$idx + 1
 
-    if (use_alt_metric) {
+    if (metric != actual_metric) {
       res$dist <-
         apply_alt_metric_correction(metric, res$dist, is_sparse(data))
     }
@@ -1042,57 +1207,11 @@ random_knn <-
 #'   internally, so if your data columns are `logical` and intended to be used
 #'   with the specialized binary `metric`s, you should convert it to a logical
 #'   matrix first (otherwise you will get the slower dense numerical version).
+#'   Numeric feature values must be finite: `NA`, `NaN`, `Inf` and `-Inf`
+#'   are not allowed.
 #' @param k Number of nearest neighbors to return. Optional if `init` is
 #'   specified.
-#' @param metric Type of distance calculation to use. One of:
-#'   - `"braycurtis"`
-#'   - `"canberra"`
-#'   - `"chebyshev"`
-#'   - `"correlation"` (1 minus the Pearson correlation)
-#'   - `"cosine"`
-#'   - `"dice"`
-#'   - `"euclidean"`
-#'   - `"hamming"`
-#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
-#' *radians*; an error will be raised if values that appear to be supplied in
-#' degrees are encountered)
-#'   - `"hellinger"`
-#'   - `"jaccard"`
-#'   - `"jensenshannon"`
-#'   - `"kulsinski"`
-#'   - `"sqeuclidean"` (squared Euclidean)
-#'   - `"manhattan"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"spearmanr"` (1 minus the Spearman rank correlation)
-#'   - `"symmetrickl"` (symmetric Kullback-Leibler divergence)
-#'   - `"tsss"` (Triangle Area Similarity-Sector Area Similarity or TS-SS
-#'   metric)
-#'   - `"yule"`
-#'
-#'   For non-sparse data, the following variants are available with
-#'   preprocessing: this trades memory for a potential speed up during the
-#'   distance calculation. Some minor numerical differences should be expected
-#'   compared to the non-preprocessed versions:
-#'   - `"cosine-preprocess"`: `cosine` with preprocessing.
-#'   - `"correlation-preprocess"`: `correlation` with preprocessing.
-#'
-#'   For non-sparse binary data passed as a `logical` matrix, the following
-#'   metrics have specialized variants which should be substantially faster than
-#'   the non-binary variants (in other cases the logical data will be treated as
-#'   a dense numeric vector of 0s and 1s):
-#'   - `"dice"`
-#'   - `"hamming"`
-#'   - `"jaccard"`
-#'   - `"kulsinski"`
-#'   - `"matching"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"yule"`
+#' @template metric
 #' @param init Name of the initialization strategy or initial `data` neighbor
 #'   graph to optimize. One of:
 #'   - `"rand"` random initialization (the default).
@@ -1143,12 +1262,12 @@ random_knn <-
 #'   a small improvement in accuracy. Because this incurs a small extra cost of
 #'   counting the degree of each node, and because it tends to delay early
 #'   convergence, by default this is `FALSE`.
-#' @param use_alt_metric If `TRUE`, use faster metrics that maintain the
-#'   ordering of distances internally (e.g. squared Euclidean distances if using
-#'   `metric = "euclidean"`), then apply a correction at the end. Probably
-#'   the only reason to set this to `FALSE` is if you suspect that some
-#'   sort of numeric issue is occurring with your data in the alternative code
-#'   path.
+#' @param use_alt_metric If `TRUE`, use alternative scores such as squared
+#'   Euclidean distance internally and return distances in the requested metric.
+#'   With `metric = "jaccard"` and a dense logical matrix, construction uses
+#'   ordinary packed Jaccard.
+#'   Queries using the resulting Jaccard forest use log scoring by default. Set
+#'   `use_alt_metric = FALSE` to use ordinary Jaccard for queries.
 #' @param ret_forest If `TRUE` and `init = "tree"` then the RP forest used to
 #'   initialize the nearest neighbors will be returned with the nearest neighbor
 #'   data. See the `Value` section for details. The returned forest can be used
@@ -1192,7 +1311,9 @@ random_knn <-
 #' # calculate the initialization are compatible with the metric options used
 #' # by nnd_knn).
 #' iris_nn <- random_knn(iris, k = 4, metric = "euclidean")
-#' iris_nn <- nnd_knn(iris, init = iris_nn, metric = "euclidean", verbose = TRUE)
+#' iris_nn <- nnd_knn(
+#'   iris, init = iris_nn, metric = "euclidean", verbose = TRUE
+#' )
 #'
 #' # Number of iterations controls how much optimization is attempted. A smaller
 #' # value will run faster but give poorer results
@@ -1207,9 +1328,12 @@ random_knn <-
 #' # stop progress earlier. The verbose flag will provide some information if
 #' # convergence is occurring before all iterations are carried out.
 #' set.seed(1337)
-#' iris_nn <- nnd_knn(iris, k = 4, metric = "euclidean", n_iters = 5, delta = 0.5)
+#' iris_nn <- nnd_knn(
+#'   iris, k = 4, metric = "euclidean", n_iters = 5, delta = 0.5
+#' )
 #'
-#' # To ensure that descent only stops if no improvements are made, set delta = 0
+#' # To ensure that descent only stops if no improvements are made,
+#' # set delta = 0
 #' set.seed(1337)
 #' iris_nn <- nnd_knn(iris, k = 4, metric = "euclidean", n_iters = 5, delta = 0)
 #'
@@ -1232,28 +1356,31 @@ random_knn <-
 #' \doi{10.1145/1374376.1374452}.
 #'
 #' Dong, W., Moses, C., & Li, K. (2011, March).
-#' Efficient k-nearest neighbor graph construction for generic similarity measures.
+#' Efficient k-nearest neighbor graph construction for generic similarity
+#' measures.
 #' In *Proceedings of the 20th international conference on World Wide Web*
 #' (pp. 577-586).
 #' ACM.
 #' \doi{10.1145/1963405.1963487}.
 #' @export
-nnd_knn <- function(data,
-                    k = NULL,
-                    metric = "euclidean",
-                    init = "rand",
-                    init_args = NULL,
-                    n_iters = NULL,
-                    max_candidates = NULL,
-                    delta = 0.001,
-                    low_memory = TRUE,
-                    weight_by_degree = FALSE,
-                    use_alt_metric = TRUE,
-                    n_threads = 0,
-                    verbose = FALSE,
-                    progress = "bar",
-                    obs = "R",
-                    ret_forest = FALSE) {
+nnd_knn <- function(
+  data,
+  k = NULL,
+  metric = "euclidean",
+  init = "rand",
+  init_args = NULL,
+  n_iters = NULL,
+  max_candidates = NULL,
+  delta = 0.001,
+  low_memory = TRUE,
+  weight_by_degree = FALSE,
+  use_alt_metric = TRUE,
+  n_threads = 0,
+  verbose = FALSE,
+  progress = "bar",
+  obs = "R",
+  ret_forest = FALSE
+) {
   progress <- match.arg(tolower(progress), c("bar", "dist"))
   obs <- match.arg(toupper(obs), c("C", "R"))
   n_threads <- check_n_threads(n_threads)
@@ -1262,14 +1389,124 @@ nnd_knn <- function(data,
   max_candidates <- check_optional_count(max_candidates, "max_candidates")
 
   actual_metric <-
-    get_actual_metric(use_alt_metric, metric, data, verbose)
+    get_actual_metric(use_alt_metric, metric, data, verbose, for_build = TRUE)
 
-  data <- x2m(data)
+  data <- x2m(data, obs)
   if (obs == "R") {
     data <- Matrix::t(data)
   }
 
+  nnd_knn_impl(
+    data = data,
+    k = k,
+    metric = metric,
+    actual_metric = actual_metric,
+    init = init,
+    init_args = init_args,
+    n_iters = n_iters,
+    max_candidates = max_candidates,
+    delta = delta,
+    low_memory = low_memory,
+    weight_by_degree = weight_by_degree,
+    use_alt_metric = use_alt_metric,
+    n_threads = n_threads,
+    verbose = verbose,
+    progress = progress,
+    ret_forest = ret_forest
+  )
+}
+
+# The build adapters prepare data before forcing NND controls.
+# Keep their small scalar header separate from direct nnd_knn.
+nnd_knn_prepared <- function(
+  data,
+  k,
+  metric,
+  init,
+  init_args,
+  n_iters,
+  max_candidates,
+  delta,
+  low_memory,
+  weight_by_degree,
+  use_alt_metric,
+  n_threads,
+  verbose,
+  progress,
+  ret_forest
+) {
+  progress <- match.arg(tolower(progress), c("bar", "dist"))
+  check_delta(delta)
+  n_iters <- check_optional_count(n_iters, "n_iters", min = 0L)
+  max_candidates <- check_optional_count(max_candidates, "max_candidates")
+  actual_metric <- get_actual_metric(
+    use_alt_metric,
+    metric,
+    data,
+    verbose,
+    for_build = TRUE
+  )
+
+  nnd_knn_impl(
+    data = data,
+    k = k,
+    metric = metric,
+    actual_metric = actual_metric,
+    init = init,
+    init_args = init_args,
+    n_iters = n_iters,
+    max_candidates = max_candidates,
+    delta = delta,
+    low_memory = low_memory,
+    weight_by_degree = weight_by_degree,
+    use_alt_metric = use_alt_metric,
+    n_threads = n_threads,
+    verbose = verbose,
+    progress = progress,
+    ret_forest = ret_forest
+  )
+}
+
+# Inputs are prepared column-oriented data and accepted NND controls.
+nnd_knn_impl <- function(
+  data,
+  k,
+  metric,
+  actual_metric,
+  init,
+  init_args,
+  n_iters,
+  max_candidates,
+  delta,
+  low_memory,
+  weight_by_degree,
+  use_alt_metric,
+  n_threads,
+  verbose,
+  progress,
+  ret_forest
+) {
   # data must be column-oriented at this point
+  if (!is.character(init) && is.null(k)) {
+    k <- ncol(init$idx)
+  }
+  if (is.null(max_candidates)) {
+    max_candidates <- min(k, 60)
+  }
+  if (is.null(n_iters)) {
+    n_iters <- max(5, round(log2(ncol(data))))
+  }
+  nnd_args <- list(
+    metric = actual_metric,
+    n_iters = n_iters,
+    max_candidates = max_candidates,
+    delta = delta,
+    low_memory = low_memory,
+    weight_by_degree = weight_by_degree,
+    n_threads = n_threads,
+    verbose = verbose,
+    progress_type = progress
+  )
   if (is.character(init)) {
     if (is.null(k)) {
       stop("Must provide k")
@@ -1277,48 +1514,62 @@ nnd_knn <- function(data,
     check_k(k, ncol(data))
     init <- match.arg(tolower(init), c("rand", "tree"))
 
-    # if the use provided tree init args that could clash with nnd args
-    # ignore them
-    if (init == "tree" && is.list(init_args)) {
-      if ("use_alt_metric" %in% init_args) {
-        init_args$use_alt_metric <- use_alt_metric
-      }
-      if ("metric" %in% init_args) {
-        init_args$metric <- metric
-      }
-    }
     tsmessage("Initializing neighbors using '", init, "' method")
-    init <- switch(init,
-      "rand" = random_knn_impl(
-        reference = data,
-        k = k,
-        actual_metric = actual_metric,
-        order_by_distance = FALSE,
-        n_threads = n_threads,
-        verbose = verbose
-      ),
-      "tree" = do.call(rpf_knn_impl, lmerge(
-        # defaults we have no reason to change should match rpf_knn or rpf_build
+    if (init == "tree") {
+      if (is.list(init_args)) {
+        init_args$metric <- NULL
+        init_args$use_alt_metric <- NULL
+      }
+      tree_args <- lmerge(
         list(
           data,
           k = k,
           metric = metric,
           use_alt_metric = use_alt_metric,
           actual_metric = actual_metric,
-          n_trees = NULL,
-          leaf_size = NULL,
-          max_tree_depth = 200,
-          include_self = FALSE, # this is changed from default on purpose
+          include_self = FALSE,
           ret_forest = ret_forest,
-          margin = "auto",
           unzero = FALSE,
           n_threads = n_threads,
           verbose = verbose
         ),
         init_args
-      )),
-      stop("Unknown initialization option '", init, "'")
-    )
+      )
+      # Other init_args can override k or data for seeding alone.
+      # Keep the general matrix importer for independently configured stages.
+      tree_controls <- c("n_trees", "leaf_size", "max_tree_depth", "margin")
+      if (
+        is.matrix(data) &&
+          is.logical(data) &&
+          (actual_metric == "alternative-jaccard" ||
+            is_binary_metric(actual_metric)) &&
+          all(names(init_args) %in% tree_controls)
+      ) {
+        margin <- if (is.null(tree_args$margin)) "auto" else tree_args$margin
+        if (find_margin_method(margin, metric, data) == "implicit") {
+          tree_args$descent_args <- nnd_args
+          res <- do.call(rpf_knn_impl, tree_args)
+          return(finish_nnd_graph(
+            res,
+            k,
+            data,
+            metric,
+            actual_metric,
+            verbose
+          ))
+        }
+      }
+      init <- do.call(rpf_knn_impl, tree_args)
+    } else {
+      init <- random_knn_impl(
+        reference = data,
+        k = k,
+        actual_metric = actual_metric,
+        order_by_distance = FALSE,
+        n_threads = n_threads,
+        verbose = verbose
+      )
+    }
     # FIXME: can we just turn off unzero in tree and random return?
     init$idx <- init$idx + 1
     if (any(init$idx == 0)) {
@@ -1331,18 +1582,21 @@ nnd_knn <- function(data,
   } else {
     tsmessage("Initializing from user-supplied graph")
     # user-supplied input may need to be transformed to the actual metric
-    if (use_alt_metric &&
-      !is.null(init) && is.list(init) && !is.null(init$dist)) {
+    if (
+      metric != actual_metric &&
+        !is.null(init) &&
+        is.list(init) &&
+        !is.null(init$dist)
+    ) {
       tsmessage(
         "Applying metric correction to initial distances from '",
-        metric, "' to '", actual_metric, "'"
+        metric,
+        "' to '",
+        actual_metric,
+        "'"
       )
       init$dist <-
         apply_alt_metric_uncorrection(metric, init$dist, is_sparse(data))
-    }
-
-    if (is.null(k)) {
-      k <- ncol(init$idx)
     }
   }
   forest <- NULL
@@ -1361,12 +1615,6 @@ nnd_knn <- function(data,
       verbose = verbose
     )
 
-  if (is.null(max_candidates)) {
-    max_candidates <- min(k, 60)
-  }
-  if (is.null(n_iters)) {
-    n_iters <- max(5, round(log2(ncol(data))))
-  }
   tsmessage(
     thread_msg(
       "Running nearest neighbor descent for ",
@@ -1376,19 +1624,8 @@ nnd_knn <- function(data,
     )
   )
 
-  nnd_args <- list(
-    nn_idx = init$idx,
-    nn_dist = init$dist,
-    metric = actual_metric,
-    n_iters = n_iters,
-    max_candidates = max_candidates,
-    delta = delta,
-    low_memory = low_memory,
-    weight_by_degree = weight_by_degree,
-    n_threads = n_threads,
-    verbose = verbose,
-    progress_type = progress
-  )
+  nnd_args$nn_idx <- init$idx
+  nnd_args$nn_dist <- init$dist
   if (is_sparse(data)) {
     nnd_fun <- rnn_sparse_descent
     nnd_args$data <- data@x
@@ -1404,7 +1641,14 @@ nnd_knn <- function(data,
   }
   res <- do.call(nnd_fun, nnd_args)
 
-  if (use_alt_metric) {
+  if (!is.null(forest)) {
+    res$forest <- forest
+  }
+  finish_nnd_graph(res, k, data, metric, actual_metric, verbose)
+}
+
+finish_nnd_graph <- function(res, k, data, metric, actual_metric, verbose) {
+  if (metric != actual_metric) {
     res$dist <-
       apply_alt_metric_correction(metric, res$dist, is_sparse(data))
   }
@@ -1416,9 +1660,6 @@ nnd_knn <- function(data,
     )
   }
   tsmessage("Finished")
-  if (!is.null(forest)) {
-    res$forest <- forest
-  }
   res
 }
 
@@ -1446,6 +1687,8 @@ nnd_knn <- function(data,
 #'   internally, so if your data columns are `logical` and intended to be used
 #'   with the specialized binary `metric`s, you should convert it to a logical
 #'   matrix first (otherwise you will get the slower dense numerical version).
+#'   Numeric feature values must be finite: `NA`, `NaN`, `Inf` and `-Inf`
+#'   are not allowed.
 #' @param reference Matrix of `m` reference items, with observations in the rows
 #'   and features in the columns. The nearest neighbors to the queries are
 #'   calculated from this data. Optionally, the data may be passed with the
@@ -1454,56 +1697,10 @@ nnd_knn <- function(data,
 #'   orientation as `reference`. Possible formats are [base::data.frame()],
 #'   [base::matrix()] or [Matrix::sparseMatrix()]. Sparse matrices should be in
 #'   `dgCMatrix` format.
+#'   Numeric feature values must be finite: `NA`, `NaN`, `Inf` and `-Inf`
+#'   are not allowed.
 #' @param k Number of nearest neighbors to return.
-#' @param metric Type of distance calculation to use. One of:
-#'   - `"braycurtis"`
-#'   - `"canberra"`
-#'   - `"chebyshev"`
-#'   - `"correlation"` (1 minus the Pearson correlation)
-#'   - `"cosine"`
-#'   - `"dice"`
-#'   - `"euclidean"`
-#'   - `"hamming"`
-#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
-#' *radians*; an error will be raised if values that appear to be supplied in
-#' degrees are encountered)
-#'   - `"hellinger"`
-#'   - `"jaccard"`
-#'   - `"jensenshannon"`
-#'   - `"kulsinski"`
-#'   - `"sqeuclidean"` (squared Euclidean)
-#'   - `"manhattan"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"spearmanr"` (1 minus the Spearman rank correlation)
-#'   - `"symmetrickl"` (symmetric Kullback-Leibler divergence)
-#'   - `"tsss"` (Triangle Area Similarity-Sector Area Similarity or TS-SS
-#'   metric)
-#'   - `"yule"`
-#'
-#'   For non-sparse data, the following variants are available with
-#'   preprocessing: this trades memory for a potential speed up during the
-#'   distance calculation. Some minor numerical differences should be expected
-#'   compared to the non-preprocessed versions:
-#'   - `"cosine-preprocess"`: `cosine` with preprocessing.
-#'   - `"correlation-preprocess"`: `correlation` with preprocessing.
-#'
-#'   For non-sparse binary data passed as a `logical` matrix, the following
-#'   metrics have specialized variants which should be substantially faster than
-#'   the non-binary variants (in other cases the logical data will be treated as
-#'   a dense numeric vector of 0s and 1s):
-#'   - `"dice"`
-#'   - `"hamming"`
-#'   - `"jaccard"`
-#'   - `"kulsinski"`
-#'   - `"matching"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"yule"`
+#' @template metric
 #' @param use_alt_metric If `TRUE`, use faster metrics that maintain the
 #'   ordering of distances internally (e.g. squared Euclidean distances if using
 #'   `metric = "euclidean"`), then apply a correction at the end. Probably
@@ -1544,28 +1741,30 @@ nnd_knn <- function(data,
 #'   k = 4, metric = "manhattan"
 #' )
 #' @export
-brute_force_knn_query <- function(query,
-                                  reference,
-                                  k,
-                                  metric = "euclidean",
-                                  use_alt_metric = TRUE,
-                                  n_threads = 0,
-                                  verbose = FALSE,
-                                  obs = "R") {
+brute_force_knn_query <- function(
+  query,
+  reference,
+  k,
+  metric = "euclidean",
+  use_alt_metric = TRUE,
+  n_threads = 0,
+  verbose = FALSE,
+  obs = "R"
+) {
   obs <- match.arg(toupper(obs), c("C", "R"))
   n_threads <- check_n_threads(n_threads)
 
   actual_metric <- get_actual_metric(use_alt_metric, metric, reference, verbose)
 
   check_sparse(reference, query)
-  reference <- x2m(reference)
-  query <- x2m(query)
+  reference <- x2m(reference, obs, "reference")
+  query <- x2m(query, obs, "query")
   check_matching_features(reference, query, obs)
   if (obs == "R") {
     reference <- Matrix::t(reference)
     query <- Matrix::t(query)
   }
-  check_k(k, ncol(reference))
+  check_k(k, ncol(reference), "reference")
 
   tsmessage(
     thread_msg(
@@ -1590,7 +1789,8 @@ brute_force_knn_query <- function(query,
       verbose = verbose
     )
   } else if (is.logical(reference)) {
-    res <- rnn_logical_brute_force_query(reference,
+    res <- rnn_logical_brute_force_query(
+      reference,
       query,
       k,
       actual_metric,
@@ -1598,7 +1798,8 @@ brute_force_knn_query <- function(query,
       verbose = verbose
     )
   } else {
-    res <- rnn_brute_force_query(reference,
+    res <- rnn_brute_force_query(
+      reference,
       query,
       k,
       actual_metric,
@@ -1606,7 +1807,9 @@ brute_force_knn_query <- function(query,
       verbose = verbose
     )
   }
-  res$idx <- res$idx + 1
+  if (ncol(query) > 0L) {
+    res$idx <- res$idx + 1
+  }
 
   if (use_alt_metric) {
     res$dist <-
@@ -1633,6 +1836,8 @@ brute_force_knn_query <- function(query,
 #'   internally, so if your data columns are `logical` and intended to be used
 #'   with the specialized binary `metric`s, you should convert it to a logical
 #'   matrix first (otherwise you will get the slower dense numerical version).
+#'   Numeric feature values must be finite: `NA`, `NaN`, `Inf` and `-Inf`
+#'   are not allowed.
 #' @param reference Matrix of `m` reference items, with observations in the rows
 #'   and features in the columns. The nearest neighbors to the queries are
 #'   randomly selected from this data. Optionally, the data may be passed with
@@ -1641,56 +1846,10 @@ brute_force_knn_query <- function(query,
 #'   and format as `reference`. Possible formats are [base::data.frame()],
 #'   [base::matrix()] or [Matrix::sparseMatrix()]. Sparse matrices should be in
 #'   `dgCMatrix` format.
+#'   Numeric feature values must be finite: `NA`, `NaN`, `Inf` and `-Inf`
+#'   are not allowed.
 #' @param k Number of nearest neighbors to return.
-#' @param metric Type of distance calculation to use. One of:
-#'   - `"braycurtis"`
-#'   - `"canberra"`
-#'   - `"chebyshev"`
-#'   - `"correlation"` (1 minus the Pearson correlation)
-#'   - `"cosine"`
-#'   - `"dice"`
-#'   - `"euclidean"`
-#'   - `"hamming"`
-#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
-#' *radians*; an error will be raised if values that appear to be supplied in
-#' degrees are encountered)
-#'   - `"hellinger"`
-#'   - `"jaccard"`
-#'   - `"jensenshannon"`
-#'   - `"kulsinski"`
-#'   - `"sqeuclidean"` (squared Euclidean)
-#'   - `"manhattan"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"spearmanr"` (1 minus the Spearman rank correlation)
-#'   - `"symmetrickl"` (symmetric Kullback-Leibler divergence)
-#'   - `"tsss"` (Triangle Area Similarity-Sector Area Similarity or TS-SS
-#'   metric)
-#'   - `"yule"`
-#'
-#'   For non-sparse data, the following variants are available with
-#'   preprocessing: this trades memory for a potential speed up during the
-#'   distance calculation. Some minor numerical differences should be expected
-#'   compared to the non-preprocessed versions:
-#'   - `"cosine-preprocess"`: `cosine` with preprocessing.
-#'   - `"correlation-preprocess"`: `correlation` with preprocessing.
-#'
-#'   For non-sparse binary data passed as a `logical` matrix, the following
-#'   metrics have specialized variants which should be substantially faster than
-#'   the non-binary variants (in other cases the logical data will be treated as
-#'   a dense numeric vector of 0s and 1s):
-#'   - `"dice"`
-#'   - `"hamming"`
-#'   - `"jaccard"`
-#'   - `"kulsinski"`
-#'   - `"matching"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"yule"`
+#' @template metric
 #' @param use_alt_metric If `TRUE`, use faster metrics that maintain the
 #'   ordering of distances internally (e.g. squared Euclidean distances if using
 #'   `metric = "euclidean"`), then apply a correction at the end. Probably
@@ -1735,29 +1894,27 @@ brute_force_knn_query <- function(query,
 #' )
 #' @export
 random_knn_query <-
-  function(query,
-           reference,
-           k,
-           metric = "euclidean",
-           use_alt_metric = TRUE,
-           order_by_distance = TRUE,
-           n_threads = 0,
-           verbose = FALSE,
-           obs = "R") {
+  function(
+    query,
+    reference,
+    k,
+    metric = "euclidean",
+    use_alt_metric = TRUE,
+    order_by_distance = TRUE,
+    n_threads = 0,
+    verbose = FALSE,
+    obs = "R"
+  ) {
     obs <- match.arg(toupper(obs), c("C", "R"))
     n_threads <- check_n_threads(n_threads)
-    n_obs <- switch(obs,
-      R = nrow,
-      C = ncol,
-      stop("Unknown obs type")
-    )
+    n_obs <- switch(obs, R = nrow, C = ncol, stop("Unknown obs type"))
 
     check_sparse(reference, query)
 
-    reference <- x2m(reference)
-    query <- x2m(query)
+    reference <- x2m(reference, obs, "reference")
+    query <- x2m(query, obs, "query")
     check_matching_features(reference, query, obs)
-    check_k(k, n_obs(reference))
+    check_k(k, n_obs(reference), "reference")
 
     actual_metric <-
       get_actual_metric(use_alt_metric, metric, reference, verbose)
@@ -1776,7 +1933,9 @@ random_knn_query <-
       n_threads = n_threads,
       verbose = verbose
     )
-    res$idx <- res$idx + 1
+    if (ncol(query) > 0L) {
+      res$idx <- res$idx + 1
+    }
 
     if (use_alt_metric) {
       res$dist <-
@@ -1809,6 +1968,8 @@ random_knn_query <-
 #'   internally, so if your data columns are `logical` and intended to be used
 #'   with the specialized binary `metric`s, you should convert it to a logical
 #'   matrix first (otherwise you will get the slower dense numerical version).
+#'   Numeric feature values must be finite: `NA`, `NaN`, `Inf` and `-Inf`
+#'   are not allowed.
 #' @param reference Matrix of `m` reference items, with observations in the rows
 #'   and features in the columns. The nearest neighbors to the queries are
 #'   calculated from this data. Optionally, the data may be passed with the
@@ -1817,61 +1978,15 @@ random_knn_query <-
 #'   orientation as `reference`. Possible formats are [base::data.frame()],
 #'   [base::matrix()] or [Matrix::sparseMatrix()]. Sparse matrices should be in
 #'   `dgCMatrix` format.
+#'   Numeric feature values must be finite: `NA`, `NaN`, `Inf` and `-Inf`
+#'   are not allowed.
 #' @param reference_graph Search graph of the `reference` data. A neighbor
 #'   graph, such as that output from [nnd_knn()] can be used, but
 #'   preferably a suitably prepared sparse search graph should be used, such as
 #'   that output by [prepare_search_graph()].
 #' @param k Number of nearest neighbors to return. Optional if `init` is
 #'   specified.
-#' @param metric Type of distance calculation to use. One of:
-#'   - `"braycurtis"`
-#'   - `"canberra"`
-#'   - `"chebyshev"`
-#'   - `"correlation"` (1 minus the Pearson correlation)
-#'   - `"cosine"`
-#'   - `"dice"`
-#'   - `"euclidean"`
-#'   - `"hamming"`
-#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
-#' *radians*; an error will be raised if values that appear to be supplied in
-#' degrees are encountered)
-#'   - `"hellinger"`
-#'   - `"jaccard"`
-#'   - `"jensenshannon"`
-#'   - `"kulsinski"`
-#'   - `"sqeuclidean"` (squared Euclidean)
-#'   - `"manhattan"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"spearmanr"` (1 minus the Spearman rank correlation)
-#'   - `"symmetrickl"` (symmetric Kullback-Leibler divergence)
-#'   - `"tsss"` (Triangle Area Similarity-Sector Area Similarity or TS-SS
-#'   metric)
-#'   - `"yule"`
-#'
-#'   For non-sparse data, the following variants are available with
-#'   preprocessing: this trades memory for a potential speed up during the
-#'   distance calculation. Some minor numerical differences should be expected
-#'   compared to the non-preprocessed versions:
-#'   - `"cosine-preprocess"`: `cosine` with preprocessing.
-#'   - `"correlation-preprocess"`: `correlation` with preprocessing.
-#'
-#'   For non-sparse binary data passed as a `logical` matrix, the following
-#'   metrics have specialized variants which should be substantially faster than
-#'   the non-binary variants (in other cases the logical data will be treated as
-#'   a dense numeric vector of 0s and 1s):
-#'   - `"dice"`
-#'   - `"hamming"`
-#'   - `"jaccard"`
-#'   - `"kulsinski"`
-#'   - `"matching"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"yule"`
+#' @template metric
 #' @param use_alt_metric If `TRUE`, use faster metrics that maintain the
 #'   ordering of distances internally (e.g. squared Euclidean distances if using
 #'   `metric = "euclidean"`), then apply a correction at the end. Probably the
@@ -1884,18 +1999,19 @@ random_knn_query <-
 #'   1. A list containing:
 #'
 #'       * `idx` an `n` by `k` matrix containing the nearest neighbor indices.
-#'       * `dist` (optional) an `n` by `k` matrix containing the nearest neighbor
-#'       distances.
+#'       * `dist` (optional) an `n` by `k` matrix containing the nearest
+#'       neighbor distances.
 #'
 #'       If `k` and `init` are specified as arguments to this function, and the
 #'       number of neighbors provided in `init` is not equal to `k` then:
 #'
-#'       * if `k` is smaller, only the `k` closest values in `init` are retained.
-#'       * if `k` is larger, then random neighbors will be chosen to fill `init` to
-#'       the size of `k`. Note that there is no checking if any of the random
-#'       neighbors are duplicates of what is already in `init` so effectively fewer
-#'       than `k` neighbors may be chosen for some observations under these
-#'       circumstances.
+#'       * if `k` is smaller, only the `k` closest values in `init` are
+#'       retained.
+#'       * if `k` is larger, then random neighbors will be chosen to fill
+#'       `init` to the size of `k`. Note that there is no checking if any of
+#'       the random neighbors are duplicates of what is already in `init` so
+#'       effectively fewer than `k` neighbors may be chosen for some
+#'       observations under these circumstances.
 #'
 #'       If the input distances are omitted, they will be calculated for you.
 #'  1. A random projection forest, such as that returned from [rpf_build()] or
@@ -1965,7 +2081,8 @@ random_knn_query <-
 #' @references
 #' Harwood, B., & Drummond, T. (2016).
 #' Fanng: Fast approximate nearest neighbour graphs.
-#' In *Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition*
+#' In *Proceedings of the IEEE Conference on Computer Vision and Pattern
+#' Recognition*
 #' (pp. 5713-5722).
 #'
 #' Iwasaki, M., & Miyazaki, D. (2018).
@@ -1973,33 +2090,67 @@ random_knn_query <-
 #' search in high-dimensional data.
 #' *arXiv preprint arXiv:1810.07355*.
 #' @export
-graph_knn_query <- function(query,
-                            reference,
-                            reference_graph,
-                            k = NULL,
-                            metric = "euclidean",
-                            init = NULL,
-                            epsilon = 0.1,
-                            max_search_fraction = 1.0,
-                            use_alt_metric = TRUE,
-                            n_threads = 0,
-                            verbose = FALSE,
-                            obs = "R") {
+graph_knn_query <- function(
+  query,
+  reference,
+  reference_graph,
+  k = NULL,
+  metric = "euclidean",
+  init = NULL,
+  epsilon = 0.1,
+  max_search_fraction = 1.0,
+  use_alt_metric = TRUE,
+  n_threads = 0,
+  verbose = FALSE,
+  obs = "R"
+) {
   obs <- match.arg(toupper(obs), c("C", "R"))
   n_threads <- check_n_threads(n_threads)
   check_query_search_controls(epsilon, max_search_fraction)
   check_sparse(reference, query)
-  reference <- x2m(reference)
-  query <- x2m(query)
+  reference <- x2m(reference, obs, "reference")
+  query <- x2m(query, obs, "query")
   check_matching_features(reference, query, obs)
   if (obs == "R") {
     reference <- Matrix::t(reference)
     query <- Matrix::t(query)
   }
 
+  graph_knn_query_impl(
+    query = query,
+    reference = reference,
+    reference_graph = reference_graph,
+    k = k,
+    metric = metric,
+    init = init,
+    epsilon = epsilon,
+    max_search_fraction = max_search_fraction,
+    use_alt_metric = use_alt_metric,
+    n_threads = n_threads,
+    verbose = verbose
+  )
+}
+
+# Both inputs are prepared column-oriented matrices with matching features.
+# Public adapters own representation and search-control validation.
+graph_knn_query_impl <- function(
+  query,
+  reference,
+  reference_graph,
+  k,
+  metric,
+  init,
+  epsilon,
+  max_search_fraction,
+  use_alt_metric,
+  n_threads,
+  verbose,
+  check_reference_during_copy = FALSE,
+  prepared_query = NULL
+) {
   if (is.list(init) && is_rpforest(init)) {
     tsmessage("Reading metric data from forest")
-    actual_metric <- init$actual_metric
+    actual_metric <- forest_scoring_metric(init)
     metric <- init$original_metric
     use_alt_metric <- init$use_alt_metric
     if (use_alt_metric && metric != actual_metric) {
@@ -2012,7 +2163,10 @@ graph_knn_query <- function(query,
       get_actual_metric(use_alt_metric, metric, reference, verbose)
   }
 
-  reference_graph <- check_reference_graph_size(reference_graph, ncol(reference))
+  reference_graph <- check_reference_graph_size(
+    reference_graph,
+    ncol(reference)
+  )
 
   # reference and query must be column-oriented at this point
   if (is.null(init)) {
@@ -2021,10 +2175,12 @@ graph_knn_query <- function(query,
         k <- get_reference_graph_k(reference_graph)
         tsmessage("Using k = ", k, " from graph")
       } else {
-        stop("Must provide k")
+        stop(
+          "'k' is required for a sparse 'reference_graph' when 'init' is NULL"
+        )
       }
     }
-    check_k(k, ncol(reference))
+    check_k(k, ncol(reference), "reference")
     tsmessage("Initializing from random neighbors")
     init <- random_knn_impl(
       query = query,
@@ -2038,7 +2194,21 @@ graph_knn_query <- function(query,
     # FIXME: can we just do the unzeroing inside the init?
     init$idx <- init$idx + 1
   } else if (is.list(init) && is_rpforest(init)) {
-    init <- rpf_knn_query(
+    # Call the setter directly to avoid copying the local integer matrix.
+    if (is.integer(reference)) {
+      reference <- `storage.mode<-`(reference, "double")
+    }
+    if (is.integer(query)) {
+      query <- `storage.mode<-`(query, "double")
+    }
+    check_k(k, ncol(reference), "reference")
+    check_rpforest_matches_reference(
+      init,
+      ncol(reference),
+      nrow(reference),
+      is_sparse(reference)
+    )
+    init <- rpf_knn_query_impl(
       query = query,
       reference = reference,
       forest = init,
@@ -2046,8 +2216,11 @@ graph_knn_query <- function(query,
       cache = TRUE,
       n_threads = n_threads,
       verbose = verbose,
-      obs = "C"
+      check_reference_during_copy = check_reference_during_copy,
+      prepared_query = prepared_query
     )
+    # Forest seeding has already checked the first reference copy.
+    check_reference_during_copy <- FALSE
     if (use_alt_metric) {
       init$dist <-
         apply_alt_metric_uncorrection(metric, init$dist, is_sparse(reference))
@@ -2068,8 +2241,11 @@ graph_knn_query <- function(query,
       k <- ncol(init$idx)
       tsmessage("Using k = ", k, " from initial graph")
     }
+    check_k(k, ncol(reference), "reference")
   } else {
-    stop("Unsupported type of 'init'")
+    stop(
+      "'init' must be NULL, a random projection forest, a neighbor-index matrix, or a graph list containing 'idx'"
+    )
   }
 
   init <-
@@ -2089,10 +2265,8 @@ graph_knn_query <- function(query,
 
   stopifnot(
     !is.null(query),
-    (
-      methods::is(query, "matrix") ||
-        methods::is(query, "sparseMatrix")
-    )
+    (methods::is(query, "matrix") ||
+      methods::is(query, "sparseMatrix"))
   )
   stopifnot(
     !is.null(init$idx),
@@ -2143,7 +2317,8 @@ graph_knn_query <- function(query,
           query_ind = query@i,
           query_ptr = query@p,
           query_data = query@x,
-          ndim = nrow(reference)
+          ndim = nrow(reference),
+          prepared_query = prepared_query
         ),
         args
       )
@@ -2152,7 +2327,11 @@ graph_knn_query <- function(query,
     res <- do.call(
       rnn_logical_query,
       c(
-        list(reference = reference, query = query),
+        list(
+          reference = reference,
+          query = query,
+          prepared_query = prepared_query
+        ),
         args
       )
     )
@@ -2160,7 +2339,12 @@ graph_knn_query <- function(query,
     res <- do.call(
       rnn_query,
       c(
-        list(reference = reference, query = query),
+        list(
+          reference = reference,
+          query = query,
+          check_reference_during_copy = check_reference_during_copy,
+          prepared_query = prepared_query
+        ),
         args
       )
     )
@@ -2226,65 +2410,17 @@ graph_knn_query <- function(query,
 #'   your data columns are `logical` and intended to be used with the
 #'   specialized binary `metric`s, you should convert it to a logical matrix
 #'   first (otherwise you will get the slower dense numerical version).
+#'   Numeric feature values must be finite: `NA`, `NaN`, `Inf` and `-Inf`
+#'   are not allowed.
 #' @param graph neighbor graph for `data`, a list containing:
 #'   * `idx` an `n` by `k` matrix containing the nearest neighbor indices of
 #'   the data in `data`.
 #'   * `dist` an `n` by `k` matrix containing the nearest neighbor distances.
-#' @param metric Type of distance calculation to use. One of:
-#'   - `"braycurtis"`
-#'   - `"canberra"`
-#'   - `"chebyshev"`
-#'   - `"correlation"` (1 minus the Pearson correlation)
-#'   - `"cosine"`
-#'   - `"dice"`
-#'   - `"euclidean"`
-#'   - `"hamming"`
-#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
-#' *radians*; an error will be raised if values that appear to be supplied in
-#' degrees are encountered)
-#'   - `"hellinger"`
-#'   - `"jaccard"`
-#'   - `"jensenshannon"`
-#'   - `"kulsinski"`
-#'   - `"sqeuclidean"` (squared Euclidean)
-#'   - `"manhattan"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"spearmanr"` (1 minus the Spearman rank correlation)
-#'   - `"symmetrickl"` (symmetric Kullback-Leibler divergence)
-#'   - `"tsss"` (Triangle Area Similarity-Sector Area Similarity or TS-SS
-#'   metric)
-#'   - `"yule"`
-#'
-#'   For non-sparse data, the following variants are available with
-#'   preprocessing: this trades memory for a potential speed up during the
-#'   distance calculation. Some minor numerical differences should be expected
-#'   compared to the non-preprocessed versions:
-#'   - `"cosine-preprocess"`: `cosine` with preprocessing.
-#'   - `"correlation-preprocess"`: `correlation` with preprocessing.
-#'
-#'   For non-sparse binary data passed as a `logical` matrix, the following
-#'   metrics have specialized variants which should be substantially faster than
-#'   the non-binary variants (in other cases the logical data will be treated as
-#'   a dense numeric vector of 0s and 1s):
-#'   - `"dice"`
-#'   - `"hamming"`
-#'   - `"jaccard"`
-#'   - `"kulsinski"`
-#'   - `"matching"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"yule"`
-#' @param use_alt_metric If `TRUE`, use faster metrics that maintain the
-#'   ordering of distances internally (e.g. squared Euclidean distances if using
-#'   `metric = "euclidean"`), then apply a correction at the end. Probably
-#'   the only reason to set this to `FALSE` is if you suspect that some
-#'   sort of numeric issue is occurring with your data in the alternative code
-#'   path.
+#' @template metric
+#' @param use_alt_metric If `TRUE`, use alternative scores such as squared
+#'   Euclidean distance internally and return distances in the requested metric.
+#'   With `metric = "jaccard"` and a dense logical matrix, construction uses
+#'   ordinary packed Jaccard.
 #' @param diversify_prob the degree of diversification of the search graph
 #'   by removing unnecessary edges through occlusion pruning. This should take a
 #'   value between `0` (no diversification) and `1` (remove as many edges as
@@ -2349,45 +2485,91 @@ graph_knn_query <- function(query,
 #' @references
 #' Harwood, B., & Drummond, T. (2016).
 #' Fanng: Fast approximate nearest neighbour graphs.
-#' In *Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition*
+#' In *Proceedings of the IEEE Conference on Computer Vision and Pattern
+#' Recognition*
 #' (pp. 5713-5722).
 #'
-#' Jayaram Subramanya, S., Devvrit, F., Simhadri, H. V., Krishnawamy, R., & Kadekodi, R. (2019).
-#' Diskann: Fast accurate billion-point nearest neighbor search on a single node.
+#' Jayaram Subramanya, S., Devvrit, F., Simhadri, H. V., Krishnawamy, R., &
+#' Kadekodi, R. (2019).
+#' Diskann: Fast accurate billion-point nearest neighbor search on a single
+#' node.
 #' *Advances in Neural Information Processing Systems*, *32*.
 #' @seealso [graph_knn_query()]
 #' @export
-prepare_search_graph <- function(data,
-                                 graph,
-                                 metric = "euclidean",
-                                 use_alt_metric = TRUE,
-                                 diversify_prob = 1.0,
-                                 pruning_degree_multiplier = 1.5,
-                                 prune_reverse = FALSE,
-                                 n_threads = 0,
-                                 verbose = FALSE,
-                                 obs = "R") {
+prepare_search_graph <- function(
+  data,
+  graph,
+  metric = "euclidean",
+  use_alt_metric = TRUE,
+  diversify_prob = 1.0,
+  pruning_degree_multiplier = 1.5,
+  prune_reverse = FALSE,
+  n_threads = 0,
+  verbose = FALSE,
+  obs = "R"
+) {
   obs <- match.arg(toupper(obs), c("C", "R"))
   n_threads <- check_n_threads(n_threads)
 
-  if (!is.null(pruning_degree_multiplier)) {
-    stopifnot(pruning_degree_multiplier > 0)
-  }
-  if (!is.null(diversify_prob)) {
-    stopifnot(
-      diversify_prob <= 1,
-      diversify_prob >= 0
-    )
-  }
+  check_search_graph_controls(diversify_prob, pruning_degree_multiplier)
 
-  data <- x2m(data)
-
-  actual_metric <-
-    get_actual_metric(use_alt_metric, metric, data, verbose)
-
+  data <- x2m(data, obs)
   if (obs == "R") {
     data <- Matrix::t(data)
   }
+
+  prepare_search_graph_impl(
+    data = data,
+    graph = graph,
+    metric = metric,
+    use_alt_metric = use_alt_metric,
+    diversify_prob = diversify_prob,
+    pruning_degree_multiplier = pruning_degree_multiplier,
+    prune_reverse = prune_reverse,
+    n_threads = n_threads,
+    verbose = verbose
+  )
+}
+
+check_search_graph_controls <- function(
+  diversify_prob,
+  pruning_degree_multiplier
+) {
+  if (!is.null(pruning_degree_multiplier)) {
+    valid_degree <- pruning_degree_multiplier > 0
+    if (
+      !(is.logical(valid_degree) && !anyNA(valid_degree) && all(valid_degree))
+    ) {
+      stop("'pruning_degree_multiplier' must be greater than 0")
+    }
+  }
+  if (!is.null(diversify_prob)) {
+    valid_prob <- diversify_prob <= 1
+    if (!(is.logical(valid_prob) && !anyNA(valid_prob) && all(valid_prob))) {
+      stop("'diversify_prob' must be between 0 and 1")
+    }
+    valid_prob <- diversify_prob >= 0
+    if (!(is.logical(valid_prob) && !anyNA(valid_prob) && all(valid_prob))) {
+      stop("'diversify_prob' must be between 0 and 1")
+    }
+  }
+  invisible(NULL)
+}
+
+# Data are prepared and column-oriented; pruning controls are accepted.
+prepare_search_graph_impl <- function(
+  data,
+  graph,
+  metric,
+  use_alt_metric,
+  diversify_prob,
+  pruning_degree_multiplier,
+  prune_reverse,
+  n_threads,
+  verbose
+) {
+  actual_metric <-
+    get_actual_metric(use_alt_metric, metric, data, verbose, for_build = TRUE)
 
   graph <- check_square_graph(graph, ncol(data))
 
@@ -2400,7 +2582,7 @@ prepare_search_graph <- function(data,
     sp <- graph_to_csparse(graph)
   }
 
-  if (use_alt_metric) {
+  if (metric != actual_metric) {
     sp@x <-
       apply_alt_metric_uncorrection(metric, sp@x, is_sparse(data))
   }
@@ -2428,8 +2610,11 @@ prepare_search_graph <- function(data,
     )
   }
   rsp <- reverse_knn_sp(fdiv)
-  if (prune_reverse && !is.null(pruning_degree_multiplier) &&
-      !is.infinite(pruning_degree_multiplier)) {
+  if (
+    prune_reverse &&
+      !is.null(pruning_degree_multiplier) &&
+      !is.infinite(pruning_degree_multiplier)
+  ) {
     max_degree <- max(round(n_nbrs * pruning_degree_multiplier), 1)
     tsmessage("Degree pruning reverse graph to max degree: ", max_degree)
     rsp <-
@@ -2449,7 +2634,8 @@ prepare_search_graph <- function(data,
       metric = actual_metric,
       prune_probability = diversify_prob,
       verbose = verbose,
-      n_threads = n_threads
+      n_threads = n_threads,
+      reverse = TRUE
     )
   } else {
     rdiv <- rsp
@@ -2464,8 +2650,10 @@ prepare_search_graph <- function(data,
   tsmessage("Merging diversified forward and reverse graph")
   merged <- merge_graphs_sp(fdiv, rdiv)
 
-  if (!is.null(pruning_degree_multiplier) &&
-    !is.infinite(pruning_degree_multiplier)) {
+  if (
+    !is.null(pruning_degree_multiplier) &&
+      !is.infinite(pruning_degree_multiplier)
+  ) {
     max_degree <- max(round(n_nbrs * pruning_degree_multiplier), 1)
     tsmessage("Degree pruning merged graph to max degree: ", max_degree)
     res <-
@@ -2486,7 +2674,7 @@ prepare_search_graph <- function(data,
     )
   }
 
-  if (use_alt_metric) {
+  if (metric != actual_metric) {
     res@x <-
       apply_alt_metric_correction(metric, res@x, is_sparse(data))
   }
@@ -2508,12 +2696,15 @@ prepare_search_graph <- function(data,
 # Advances in Neural Information Processing Systems, 32.
 # the pynndescent implementation at cmuparlay/pbbsbench uses alpha instead of
 # a prune_probability (see also https://arxiv.org/abs/2305.04359)
-diversify <- function(data,
-                      graph,
-                      metric = "euclidean",
-                      prune_probability = 1.0,
-                      n_threads = 0,
-                      verbose = FALSE) {
+diversify <- function(
+  data,
+  graph,
+  metric = "euclidean",
+  prune_probability = 1.0,
+  n_threads = 0,
+  verbose = FALSE,
+  reverse = FALSE
+) {
   nnz_before <- Matrix::nnzero(graph)
   sp_before <- nn_sparsity_sp(graph)
   stopifnot(methods::is(graph, "sparseMatrix"))
@@ -2528,20 +2719,39 @@ diversify <- function(data,
     verbose = verbose
   )
   if (is_sparse(data)) {
-    gl_div <- do.call(rnn_sparse_diversify, c(args, list(
-      ind = data@i,
-      ptr = data@p,
-      data = data@x,
-      ndim = nrow(data)
-    )))
+    gl_div <- do.call(
+      rnn_sparse_diversify,
+      c(
+        args,
+        list(
+          ind = data@i,
+          ptr = data@p,
+          data = data@x,
+          ndim = nrow(data),
+          balance_work = reverse
+        )
+      )
+    )
   } else if (is.logical(data)) {
-    gl_div <- do.call(rnn_logical_diversify, c(args, list(
-      data = data
-    )))
+    gl_div <- do.call(
+      rnn_logical_diversify,
+      c(
+        args,
+        list(
+          data = data
+        )
+      )
+    )
   } else {
-    gl_div <- do.call(rnn_diversify, c(args, list(
-      data = data
-    )))
+    gl_div <- do.call(
+      rnn_diversify,
+      c(
+        args,
+        list(
+          data = data
+        )
+      )
+    )
   }
   res <- list_to_sparse(gl_div)
   nnz_after <- Matrix::nnzero(res)
@@ -2566,10 +2776,7 @@ diversify <- function(data,
 # In *Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition*
 # (pp. 5713-5722).
 degree_prune <-
-  function(graph,
-           max_degree = 20,
-           n_threads = 0,
-           verbose = FALSE) {
+  function(graph, max_degree = 20, n_threads = 0, verbose = FALSE) {
     stopifnot(methods::is(graph, "sparseMatrix"))
     nnz_before <- Matrix::nnzero(graph)
     sp_before <- nn_sparsity_sp(graph)
@@ -2604,12 +2811,8 @@ merge_graphs_sp <- function(g1, g2) {
   list_to_sparse(gl_merge)
 }
 
-nn_sparsity <- function(graph) {
-  sum(graph$idx == 0) / prod(dim(graph$idx))
-}
-
 nn_sparsity_sp <- function(graph) {
-  Matrix::nnzero(graph) / prod(graph@Dim)
+  1 - Matrix::nnzero(graph) / prod(graph@Dim)
 }
 
 reverse_knn_sp <- function(graph) {
@@ -2666,21 +2869,19 @@ reverse_knn_sp <- function(graph) {
 #' sum(iris_mnn$dist) < sum(iris_rnn2$dist)
 #' sum(iris_mnn$dist) < sum(iris_rnn3$dist)
 #' @export
-merge_knn <- function(graphs,
-                      is_query = FALSE,
-                      n_threads = 0,
-                      verbose = FALSE) {
+merge_knn <- function(
+  graphs,
+  is_query = FALSE,
+  n_threads = 0,
+  verbose = FALSE
+) {
   n_threads <- check_n_threads(n_threads)
   if (length(graphs) == 0) {
     return(list())
   }
-  validate_are_mergeablel(graphs, is_query = is_query)
+  validate_merge_graphs(graphs, is_query = is_query)
 
-  rnn_merge_nn_all(graphs,
-    is_query,
-    n_threads = n_threads,
-    verbose = verbose
-  )
+  rnn_merge_nn_all(graphs, is_query, n_threads = n_threads, verbose = verbose)
 }
 
 # Overlap -----------------------------------------------------------------
@@ -2706,7 +2907,8 @@ merge_knn <- function(graphs,
 #'   considered to be the ground truth.
 #' @param k Number of neighbors to consider. If `NULL`, then the minimum of the
 #'   number of neighbors in `idx1` and `idx2` is used.
-#' @param ret_vec If `TRUE`, also return a vector containing the per-item overlap.
+#' @param ret_vec If `TRUE`, also return a vector containing the per-item
+#'   overlap.
 #' @return The mean overlap between `idx1` and `idx2`. If `ret_vec = TRUE`,
 #'  then a list containing the mean overlap and the overlap of each item in
 #'  is returned with names `mean` and `overlaps`, respectively.
@@ -2724,10 +2926,7 @@ merge_knn <- function(graphs,
 #' summary(overlap_res$overlaps)
 #' @export
 neighbor_overlap <-
-  function(idx1,
-           idx2,
-           k = NULL,
-           ret_vec = FALSE) {
+  function(idx1, idx2, k = NULL, ret_vec = FALSE) {
     vec <- neighbor_overlapv(idx1, idx2, k)
     mean_overlap <- mean(vec)
     if (ret_vec) {
@@ -2742,9 +2941,7 @@ neighbor_overlap <-
   }
 
 neighbor_overlapv <-
-  function(idx,
-           ref_idx,
-           k = NULL) {
+  function(idx, ref_idx, k = NULL) {
     if (is.list(idx)) {
       idx <- idx$idx
     }
@@ -2757,12 +2954,12 @@ neighbor_overlapv <-
     }
 
     if (ncol(ref_idx) < k) {
-      stop("Not enough columns in ref_idx for k = ", k)
+      stop("Not enough columns in 'idx2' for k = ", k)
     }
 
     n <- nrow(idx)
     if (nrow(ref_idx) != n) {
-      stop("Not enough rows in ref_idx")
+      stop("'idx1' and 'idx2' must have the same number of rows")
     }
 
     nbr_start <- 1
@@ -2776,8 +2973,10 @@ neighbor_overlapv <-
 
     total_intersect <- rep(0, times = n)
     for (i in 1:n) {
+      nbrs <- idx[i, nbr_range]
+      ref_nbrs <- ref_idx[i, ref_range]
       total_intersect[i] <-
-        length(intersect(idx[i, nbr_range], ref_idx[i, ref_range]))
+        length(intersect(nbrs[nbrs != 0L], ref_nbrs[ref_nbrs != 0L]))
     }
 
     total_intersect / k

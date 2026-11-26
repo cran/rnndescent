@@ -25,7 +25,9 @@ should be more efficient. Possible formats are \code{\link[base:data.frame]{base
 format internally, so if your data columns are \code{logical} and intended to be
 used with the specialized binary \code{metric}s, you should convert it to a
 logical matrix first (otherwise you will get the slower dense numerical
-version).}
+version).
+Numeric feature values must be finite: \code{NA}, \code{NaN}, \code{Inf} and \code{-Inf}
+are not allowed.}
 
 \item{k}{Number of nearest neighbors to return.}
 
@@ -37,6 +39,8 @@ version).}
 \item \code{"correlation"} (1 minus the Pearson correlation)
 \item \code{"cosine"}
 \item \code{"dice"}
+\item \code{"dot"} (1 minus the normalized dot product, capped at 1;
+1 if either vector is zero)
 \item \code{"euclidean"}
 \item \code{"hamming"}
 \item \code{"haversine"} (great-circle distance for 2D latitude/longitude in
@@ -48,12 +52,16 @@ degrees are encountered)
 \item \code{"kulsinski"}
 \item \code{"sqeuclidean"} (squared Euclidean)
 \item \code{"manhattan"}
+\item \code{"matching"} (fraction of features whose zero/nonzero indicators
+differ)
 \item \code{"rogerstanimoto"}
 \item \code{"russellrao"}
 \item \code{"sokalmichener"}
 \item \code{"sokalsneath"}
 \item \code{"spearmanr"} (1 minus the Spearman rank correlation)
 \item \code{"symmetrickl"} (symmetric Kullback-Leibler divergence)
+\item \code{"trueangular"} (angle between vectors divided by pi; 0 for two zero
+vectors and 1/2 when exactly one vector is zero)
 \item \code{"tsss"} (Triangle Area Similarity-Sector Area Similarity or TS-SS
 metric)
 \item \code{"yule"}
@@ -85,12 +93,10 @@ a dense numeric vector of 0s and 1s):
 \item \code{"yule"}
 }}
 
-\item{use_alt_metric}{If \code{TRUE}, use faster metrics that maintain the
-ordering of distances internally (e.g. squared Euclidean distances if using
-\code{metric = "euclidean"}), then apply a correction at the end. Probably
-the only reason to set this to \code{FALSE} is if you suspect that some
-sort of numeric issue is occurring with your data in the alternative code
-path.}
+\item{use_alt_metric}{If \code{TRUE}, use alternative scores such as squared
+Euclidean distance internally and return distances in the requested metric.
+With \code{metric = "jaccard"} and a dense logical matrix, construction uses
+ordinary packed Jaccard.}
 
 \item{order_by_distance}{If \code{TRUE} (the default), then results for each
 item are returned by increasing distance. If you don't need the results
@@ -138,5 +144,7 @@ iris_nn <- random_knn(iris, k = 4, metric = "euclidean", verbose = TRUE)
 
 # These results can be improved by nearest neighbors descent. You don't need
 # to specify k here because this is worked out from the initial input
-iris_nn <- nnd_knn(iris, init = iris_nn, metric = "euclidean", verbose = TRUE)
+iris_nn <- nnd_knn(
+  iris, init = iris_nn, metric = "euclidean", verbose = TRUE
+)
 }

@@ -13,67 +13,18 @@
 #'   internally, so if your data columns are `logical` and intended to be used
 #'   with the specialized binary `metric`s, you should convert it to a logical
 #'   matrix first (otherwise you will get the slower dense numerical version).
+#'   Numeric feature values must be finite: `NA`, `NaN`, `Inf` and `-Inf`
+#'   are not allowed.
 #' @param k Number of nearest neighbors to return. Optional if `init` is
 #'   specified.
-#' @param metric Type of distance calculation to use. One of:
-#'   - `"braycurtis"`
-#'   - `"canberra"`
-#'   - `"chebyshev"`
-#'   - `"correlation"` (1 minus the Pearson correlation)
-#'   - `"cosine"`
-#'   - `"dice"`
-#'   - `"euclidean"`
-#'   - `"hamming"`
-#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
-#' *radians*; an error will be raised if values that appear to be supplied in
-#' degrees are encountered)
-#'   - `"hellinger"`
-#'   - `"jaccard"`
-#'   - `"jensenshannon"`
-#'   - `"kulsinski"`
-#'   - `"sqeuclidean"` (squared Euclidean)
-#'   - `"manhattan"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"spearmanr"` (1 minus the Spearman rank correlation)
-#'   - `"symmetrickl"` (symmetric Kullback-Leibler divergence)
-#'   - `"tsss"` (Triangle Area Similarity-Sector Area Similarity or TS-SS
-#'   metric)
-#'   - `"yule"`
-#'
-#'   For non-sparse data, the following variants are available with
-#'   preprocessing: this trades memory for a potential speed up during the
-#'   distance calculation. Some minor numerical differences should be expected
-#'   compared to the non-preprocessed versions:
-#'   - `"cosine-preprocess"`: `cosine` with preprocessing.
-#'   - `"correlation-preprocess"`: `correlation` with preprocessing.
-#'
-#'   For non-sparse binary data passed as a `logical` matrix, the following
-#'   metrics have specialized variants which should be substantially faster than
-#'   the non-binary variants (in other cases the logical data will be treated as
-#'   a dense numeric vector of 0s and 1s):
-#'   - `"dice"`
-#'   - `"hamming"`
-#'   - `"jaccard"`
-#'   - `"kulsinski"`
-#'   - `"matching"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"yule"`
-#'
-#'   Note that if `margin = "explicit"`, the metric is only used to determine
-#'   whether an "angular" or "Euclidean" distance is used to measure the
-#'   distance between split points in the tree.
-#' @param use_alt_metric If `TRUE`, use faster metrics that maintain the
-#'   ordering of distances internally (e.g. squared Euclidean distances if using
-#'   `metric = "euclidean"`), then apply a correction at the end. Probably
-#'   the only reason to set this to `FALSE` is if you suspect that some
-#'   sort of numeric issue is occurring with your data in the alternative code
-#'   path.
+#' @template metric
+#' @templateVar explicit_margin TRUE
+#' @param use_alt_metric If `TRUE`, use alternative scores such as squared
+#'   Euclidean distance internally and return distances in the requested metric.
+#'   With `metric = "jaccard"` and a dense logical matrix, construction uses
+#'   ordinary packed Jaccard.
+#'   Queries using the resulting Jaccard forest use log scoring by default. Set
+#'   `use_alt_metric = FALSE` to use ordinary Jaccard for queries.
 #' @param n_trees The number of trees to use in the RP forest. A larger number
 #'   will give more accurate results at the cost of a longer computation time.
 #'   The default of `NULL` means that the number is chosen based on the number
@@ -108,8 +59,8 @@
 #'   and offset, and then calculates the margin based on the dot product with
 #'   the hyperplane.
 #'   - `"implicit"` calculates the distance from a point to each of the
-#'   points defining the normal vector. The margin is calculated by comparing the
-#'   two distances: the point is assigned to the side of the hyperplane that
+#'   points defining the normal vector. The margin is calculated by comparing
+#'   the two distances: the point is assigned to the side of the hyperplane that
 #'   the normal vector point with the closest distance belongs to.
 #'   - `"auto"` (the default) picks the margin method depending on whether a
 #'   binary-specific `metric` such as `"bhammming"` is chosen, in which case
@@ -157,30 +108,34 @@
 #' \doi{10.1145/1374376.1374452}.
 #' @seealso [rpf_filter()], [nnd_knn()]
 #' @export
-rpf_knn <- function(data,
-                    k,
-                    metric = "euclidean",
-                    use_alt_metric = TRUE,
-                    n_trees = NULL,
-                    leaf_size = NULL,
-                    max_tree_depth = 200,
-                    include_self = TRUE,
-                    ret_forest = FALSE,
-                    margin = "auto",
-                    n_threads = 0,
-                    verbose = FALSE,
-                    obs = "R") {
+rpf_knn <- function(
+  data,
+  k,
+  metric = "euclidean",
+  use_alt_metric = TRUE,
+  n_trees = NULL,
+  leaf_size = NULL,
+  max_tree_depth = 200,
+  include_self = TRUE,
+  ret_forest = FALSE,
+  margin = "auto",
+  n_threads = 0,
+  verbose = FALSE,
+  obs = "R"
+) {
   obs <- match.arg(toupper(obs), c("C", "R"))
   n_threads <- check_n_threads(n_threads)
-  n_obs <- switch(obs,
-    R = nrow,
-    C = ncol,
-    stop("Unknown obs type")
-  )
-  data <- x2m(data)
+  n_obs <- switch(obs, R = nrow, C = ncol, stop("Unknown obs type"))
+  data <- x2m(data, obs)
   check_k(k, n_obs(data))
 
-  actual_metric <- get_actual_metric(use_alt_metric, metric, data, verbose)
+  actual_metric <- get_actual_metric(
+    use_alt_metric,
+    metric,
+    data,
+    verbose,
+    for_build = TRUE
+  )
 
   if (obs == "R") {
     data <- Matrix::t(data)
@@ -203,7 +158,7 @@ rpf_knn <- function(data,
     unzero = TRUE
   )
 
-  if (use_alt_metric) {
+  if (metric != actual_metric) {
     res$dist <-
       apply_alt_metric_correction(metric, res$dist, is_sparse(data))
   }
@@ -225,65 +180,16 @@ rpf_knn <- function(data,
 #'   internally, so if your data columns are `logical` and intended to be used
 #'   with the specialized binary `metric`s, you should convert it to a logical
 #'   matrix first (otherwise you will get the slower dense numerical version).
-#' @param metric Type of distance calculation to use. One of:
-#'   - `"braycurtis"`
-#'   - `"canberra"`
-#'   - `"chebyshev"`
-#'   - `"correlation"` (1 minus the Pearson correlation)
-#'   - `"cosine"`
-#'   - `"dice"`
-#'   - `"euclidean"`
-#'   - `"hamming"`
-#'   - `"haversine"` (great-circle distance for 2D latitude/longitude in
-#' *radians*; an error will be raised if values that appear to be supplied in
-#' degrees are encountered)
-#'   - `"hellinger"`
-#'   - `"jaccard"`
-#'   - `"jensenshannon"`
-#'   - `"kulsinski"`
-#'   - `"sqeuclidean"` (squared Euclidean)
-#'   - `"manhattan"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"spearmanr"` (1 minus the Spearman rank correlation)
-#'   - `"symmetrickl"` (symmetric Kullback-Leibler divergence)
-#'   - `"tsss"` (Triangle Area Similarity-Sector Area Similarity or TS-SS
-#'   metric)
-#'   - `"yule"`
-#'
-#'   For non-sparse data, the following variants are available with
-#'   preprocessing: this trades memory for a potential speed up during the
-#'   distance calculation. Some minor numerical differences should be expected
-#'   compared to the non-preprocessed versions:
-#'   - `"cosine-preprocess"`: `cosine` with preprocessing.
-#'   - `"correlation-preprocess"`: `correlation` with preprocessing.
-#'
-#'   For non-sparse binary data passed as a `logical` matrix, the following
-#'   metrics have specialized variants which should be substantially faster than
-#'   the non-binary variants (in other cases the logical data will be treated as
-#'   a dense numeric vector of 0s and 1s):
-#'   - `"dice"`
-#'   - `"hamming"`
-#'   - `"jaccard"`
-#'   - `"kulsinski"`
-#'   - `"matching"`
-#'   - `"rogerstanimoto"`
-#'   - `"russellrao"`
-#'   - `"sokalmichener"`
-#'   - `"sokalsneath"`
-#'   - `"yule"`
-#'
-#'   Note that if `margin = "explicit"`, the metric is only used to determine
-#'   whether an "angular" or "Euclidean" distance is used to measure the
-#'   distance between split points in the tree.
-#' @param use_alt_metric If `TRUE`, use faster metrics that maintain the
-#'   ordering of distances internally (e.g. squared Euclidean distances if using
-#'   `metric = "euclidean"`). Probably the only reason to set this to `FALSE` is
-#'   if you suspect that some sort of numeric issue is occurring with your data
-#'   in the alternative code path. Only applies if the implicit `margin` method
-#'   is used.
+#'   Numeric feature values must be finite: `NA`, `NaN`, `Inf` and `-Inf`
+#'   are not allowed.
+#' @template metric
+#' @templateVar explicit_margin TRUE
+#' @param use_alt_metric If `TRUE`, use alternative scores such as squared
+#'   Euclidean distance internally and return distances in the requested metric.
+#'   With `metric = "jaccard"` and a dense logical matrix, construction uses
+#'   ordinary packed Jaccard.
+#'   Queries using the resulting Jaccard forest use log scoring by default. Set
+#'   `use_alt_metric = FALSE` to use ordinary Jaccard for queries. This option applies to implicit margins.
 #' @param n_trees The number of trees to use in the RP forest. A larger number
 #'   will give more accurate results at the cost of a longer computation time.
 #'   The default of `NULL` means that the number is chosen based on the number
@@ -308,8 +214,8 @@ rpf_knn <- function(data,
 #'   and offset, and then calculates the margin based on the dot product with
 #'   the hyperplane.
 #'   - `"implicit"` calculates the distance from a point to each of the
-#'   points defining the normal vector. The margin is calculated by comparing the
-#'   two distances: the point is assigned to the side of the hyperplane that
+#'   points defining the normal vector. The margin is calculated by comparing
+#'   the two distances: the point is assigned to the side of the hyperplane that
 #'   the normal vector point with the closest distance belongs to.
 #'   - `"auto"` (the default) picks the margin method depending on whether a
 #'   binary-specific `metric` such as `"bhammming"` is chosen, in which case
@@ -352,29 +258,26 @@ rpf_knn <- function(data,
 #'   forest = iris_odd_forest, k = 15
 #' )
 #' @export
-rpf_build <- function(data,
-                      metric = "euclidean",
-                      use_alt_metric = TRUE,
-                      n_trees = NULL,
-                      leaf_size = 10,
-                      max_tree_depth = 200,
-                      margin = "auto",
-                      n_threads = 0,
-                      verbose = FALSE,
-                      obs = "R") {
+rpf_build <- function(
+  data,
+  metric = "euclidean",
+  use_alt_metric = TRUE,
+  n_trees = NULL,
+  leaf_size = 10,
+  max_tree_depth = 200,
+  margin = "auto",
+  n_threads = 0,
+  verbose = FALSE,
+  obs = "R"
+) {
   obs <- match.arg(toupper(obs), c("C", "R"))
   n_threads <- check_n_threads(n_threads)
-  n_obs <- switch(obs,
-    R = nrow,
-    C = ncol,
-    stop("Unknown obs type")
-  )
+  n_obs <- switch(obs, R = nrow, C = ncol, stop("Unknown obs type"))
 
-  data <- x2m(data)
+  data <- x2m(data, obs)
 
   if (is.null(n_trees)) {
-    n_trees <- 5 + as.integer(round(n_obs(data)^0.25))
-    n_trees <- min(32, n_trees)
+    n_trees <- default_n_trees(n_obs(data))
   }
   n_trees <- check_count(n_trees, "n_trees")
   leaf_size <- check_count(leaf_size, "leaf_size")
@@ -382,7 +285,13 @@ rpf_build <- function(data,
 
   margin <- find_margin_method(margin, metric, data)
 
-  actual_metric <- get_actual_metric(use_alt_metric, metric, data, verbose)
+  actual_metric <- get_actual_metric(
+    use_alt_metric,
+    metric,
+    data,
+    verbose,
+    for_build = TRUE
+  )
 
   tsmessage(
     thread_msg(
@@ -390,7 +299,9 @@ rpf_build <- function(data,
       n_trees,
       " max leaf size = ",
       leaf_size,
-      " margin = '", margin, "'",
+      " margin = '",
+      margin,
+      "'",
       n_threads = n_threads
     )
   )
@@ -449,11 +360,12 @@ rpf_build <- function(data,
         n_threads = n_threads,
         verbose = verbose
       )
-    }
-    # no logical option here as explicit margin must do real-value maths
-    # on hyperplanes rather than calculating distances between points in the
-    # dataset
-    else {
+    } else {
+      # There is no logical explicit-margin builder because hyperplanes require
+      # real-valued math rather than point-distance calculations.
+      if (is.logical(data) && anyNA(data)) {
+        stop("Logical feature values must not be NA")
+      }
       forest <- rnn_rp_forest_build(
         data,
         actual_metric,
@@ -466,7 +378,13 @@ rpf_build <- function(data,
     }
   }
   forest <-
-    set_forest_data(forest, use_alt_metric, metric, is_sparse(data))
+    set_forest_data(
+      forest,
+      use_alt_metric,
+      metric,
+      is_sparse(data),
+      build_data = data
+    )
 
   tsmessage("Finished")
   forest
@@ -488,6 +406,8 @@ rpf_build <- function(data,
 #'   internally, so if your data columns are `logical` and intended to be used
 #'   with the specialized binary `metric`s, you should convert it to a logical
 #'   matrix first (otherwise you will get the slower dense numerical version).
+#'   Numeric feature values must be finite: `NA`, `NaN`, `Inf` and `-Inf`
+#'   are not allowed.
 #' @param reference Matrix of `m` reference items, with observations in the rows
 #'   and features in the columns. The nearest neighbors to the queries are
 #'   calculated from this data and should be the same data used to build the
@@ -496,6 +416,8 @@ rpf_build <- function(data,
 #'   `query` data must be passed in the same format and orientation as
 #'   `reference`. Possible formats are [base::data.frame()], [base::matrix()] or
 #'   [Matrix::sparseMatrix()]. Sparse matrices should be in `dgCMatrix` format.
+#'   Numeric feature values must be finite: `NA`, `NaN`, `Inf` and `-Inf`
+#'   are not allowed.
 #' @param forest A random partition forest, created by [rpf_build()],
 #'   representing partitions of the data in `reference`.
 #' @param k Number of nearest neighbors to return. You are unlikely to get good
@@ -540,59 +462,76 @@ rpf_build <- function(data,
 #'   forest = iris_odd_forest, k = 15
 #' )
 #' @export
-rpf_knn_query <- function(query,
-                          reference,
-                          forest,
-                          k,
-                          cache = TRUE,
-                          n_threads = 0,
-                          verbose = FALSE,
-                          obs = "R") {
+rpf_knn_query <- function(
+  query,
+  reference,
+  forest,
+  k,
+  cache = TRUE,
+  n_threads = 0,
+  verbose = FALSE,
+  obs = "R"
+) {
   obs <- match.arg(toupper(obs), c("C", "R"))
   n_threads <- check_n_threads(n_threads)
-  n_obs <- switch(obs,
-    R = nrow,
-    C = ncol,
-    stop("Unknown obs type")
-  )
+  n_obs <- switch(obs, R = nrow, C = ncol, stop("Unknown obs type"))
 
   check_sparse(reference, query)
 
-  reference <- x2m(reference)
-  query <- x2m(query)
+  reference <- x2m(reference, obs, "reference")
+  query <- x2m(query, obs, "query")
   check_matching_features(reference, query, obs)
-  check_k(k, n_obs(reference))
-  n_features <- switch(obs,
+  check_k(k, n_obs(reference), "reference")
+  n_features <- switch(
+    obs,
     R = ncol(reference),
     C = nrow(reference),
     stop("Unknown obs type")
   )
 
-  if (!is.list(forest)) {
-    stop("Bad forest format: not a list")
-  }
-  if (is.null(forest$margin)) {
-    stop("Bad forest format: no 'margin' specified")
-  }
-  if (is_sparse(reference) && !forest$sparse) {
-    stop("Incompatible sparse forest used with dense input data")
-  }
-  if (!is_sparse(reference) && forest$sparse) {
-    stop("Incompatible dense forest used with sparse input data")
-  }
-  check_rpforest_matches_reference(forest, n_obs(reference), n_features)
+  check_rpforest_matches_reference(
+    forest,
+    n_obs(reference),
+    n_features,
+    is_sparse(reference)
+  )
 
   if (obs == "R") {
     reference <- Matrix::t(reference)
     query <- Matrix::t(query)
   }
 
-  tsmessage(thread_msg("Querying rp forest for k = ",
-    k, ifelse(cache, " with caching", ""),
+  rpf_knn_query_impl(
+    query = query,
+    reference = reference,
+    forest = forest,
+    k = k,
+    cache = cache,
+    n_threads = n_threads,
+    verbose = verbose
+  )
+}
+
+# Inputs are prepared column-oriented matrices; k and forest are compatible.
+rpf_knn_query_impl <- function(
+  query,
+  reference,
+  forest,
+  k,
+  cache,
+  n_threads,
+  verbose,
+  check_reference_during_copy = FALSE,
+  prepared_query = NULL
+) {
+  tsmessage(thread_msg(
+    "Querying rp forest for k = ",
+    k,
+    ifelse(cache, " with caching", ""),
     n_threads = n_threads
   ))
 
-  metric <- forest$actual_metric
+  metric <- forest_scoring_metric(forest)
   if (is_sparse(reference)) {
     res <-
       rnn_sparse_rp_forest_search(
@@ -608,7 +547,8 @@ rpf_knn_query <- function(query,
         metric = metric,
         cache = cache,
         n_threads = n_threads,
-        verbose = verbose
+        verbose = verbose,
+        prepared_query = prepared_query
       )
   } else if (is.logical(reference)) {
     res <-
@@ -620,7 +560,8 @@ rpf_knn_query <- function(query,
         metric = metric,
         cache = cache,
         n_threads = n_threads,
-        verbose = verbose
+        verbose = verbose,
+        prepared_query = prepared_query
       )
   } else {
     res <-
@@ -632,13 +573,19 @@ rpf_knn_query <- function(query,
         metric = metric,
         cache = cache,
         n_threads = n_threads,
-        verbose = verbose
+        verbose = verbose,
+        check_reference_during_copy = check_reference_during_copy,
+        prepared_query = prepared_query
       )
   }
 
   if (forest$use_alt_metric) {
     res$dist <-
-      apply_alt_metric_correction(forest$original_metric, res$dist, is_sparse(reference))
+      apply_alt_metric_correction(
+        forest$original_metric,
+        res$dist,
+        is_sparse(reference)
+      )
   }
   tsmessage("Finished")
   res
@@ -694,15 +641,11 @@ rpf_knn_query <- function(query,
 #' )
 #' @export
 rpf_filter <-
-  function(nn,
-           forest = NULL,
-           n_trees = 1,
-           n_threads = 0,
-           verbose = FALSE) {
+  function(nn, forest = NULL, n_trees = 1, n_threads = 0, verbose = FALSE) {
     n_threads <- check_n_threads(n_threads)
     if (is.null(forest)) {
       if (is.null(nn$forest)) {
-        stop("Must provide 'forest' parameter")
+        stop("Provide 'forest' directly or in 'nn$forest'")
       }
       forest <- nn$forest
     }
@@ -712,7 +655,7 @@ rpf_filter <-
     unfiltered_trees <- forest$trees
     n_unfiltered_trees <- length(unfiltered_trees)
     if (n_unfiltered_trees < 1) {
-      stop("Invalid forest: no trees")
+      stop("'forest$trees' must contain at least one tree")
     }
     n_trees <- check_count(n_trees, "n_trees", max = n_unfiltered_trees)
 
@@ -727,7 +670,10 @@ rpf_filter <-
       )
     }
 
-    tsmessage(thread_msg("Keeping ", n_trees, " best search trees",
+    tsmessage(thread_msg(
+      "Keeping ",
+      n_trees,
+      " best search trees",
       n_threads = n_threads
     ))
     filtered_forest <- rnn_score_forest(

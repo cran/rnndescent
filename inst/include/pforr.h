@@ -20,20 +20,66 @@
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301,
 // USA.
 
-#ifndef PFORR
-#define PFORR
+#ifndef PFORR_PFORR_H
+#define PFORR_PFORR_H
 
 #include <algorithm>
 #include <cstddef>
 #include <exception>
+#include <functional>
 #include <mutex>
+#include <stdexcept>
+#include <string>
 #include <thread>
 #include <utility>
 #include <vector>
 
 namespace pforr {
 
+// Maintainers: rnndescent's installed header is canonical; downstream copies
+// must remain byte-for-byte identical.
 using IndexRange = std::pair<std::size_t, std::size_t>;
+
+namespace detail {
+
+class WorkerFailure {
+public:
+  void capture(const std::exception &error) {
+    std::lock_guard<std::mutex> guard(mutex);
+    if (!failed) {
+      try {
+        message = error.what();
+        standard_exception = true;
+      } catch (...) {
+        standard_exception = false;
+      }
+      failed = true;
+    }
+  }
+
+  void capture_unknown() {
+    std::lock_guard<std::mutex> guard(mutex);
+    if (!failed) {
+      failed = true;
+    }
+  }
+
+  void throw_if_set() const {
+    if (!failed) {
+      return;
+    }
+    if (standard_exception) {
+      throw std::runtime_error(message);
+    }
+    throw std::runtime_error("parallel worker threw a non-standard exception");
+  }
+
+private:
+  std::mutex mutex;
+  std::string message;
+  bool failed{false};
+  bool standard_exception{false};
+};
 
 class ThreadJoiner {
 public:
@@ -56,15 +102,26 @@ private:
 
 template <typename Worker>
 auto worker_thread(Worker &worker, const IndexRange &range,
-                   std::exception_ptr &worker_exception,
-                   std::mutex &worker_exception_mutex) -> void {
+                   WorkerFailure &worker_failure) -> void {
   try {
     worker(range.first, range.second);
+  } catch (const std::exception &error) {
+    worker_failure.capture(error);
   } catch (...) {
-    std::lock_guard<std::mutex> guard(worker_exception_mutex);
-    if (worker_exception == nullptr) {
-      worker_exception = std::current_exception();
-    }
+    worker_failure.capture_unknown();
+  }
+}
+
+template <typename Worker>
+auto worker_thread_indexed(Worker &worker, const IndexRange &range,
+                           std::size_t chunk_id, WorkerFailure &worker_failure)
+    -> void {
+  try {
+    worker(range.first, range.second, chunk_id);
+  } catch (const std::exception &error) {
+    worker_failure.capture(error);
+  } catch (...) {
+    worker_failure.capture_unknown();
   }
 }
 
@@ -82,10 +139,12 @@ inline auto effective_grain_size(const IndexRange &range, std::size_t n_threads,
   }
 
   const auto max_chunks = (std::min)(length, n_threads);
-  const auto even_chunk = static_cast<std::size_t>(1) +
-    ((length - 1) / max_chunks);
+  const auto even_chunk =
+      static_cast<std::size_t>(1) + ((length - 1) / max_chunks);
   return (std::max)(grain_size, even_chunk);
 }
+
+} // namespace detail
 
 inline auto split_input_range(const IndexRange &range, std::size_t n_threads,
                               std::size_t grain_size)
@@ -93,7 +152,7 @@ inline auto split_input_range(const IndexRange &range, std::size_t n_threads,
   if (range.first >= range.second) {
     return {};
   }
-  grain_size = effective_grain_size(range, n_threads, grain_size);
+  grain_size = detail::effective_grain_size(range, n_threads, grain_size);
 
   // allocate ranges
   std::vector<IndexRange> ranges;
@@ -102,7 +161,7 @@ inline auto split_input_range(const IndexRange &range, std::size_t n_threads,
   while (begin < range.second) {
     const auto remaining = range.second - begin;
     const auto end =
-      remaining <= grain_size ? range.second : begin + grain_size;
+        remaining <= grain_size ? range.second : begin + grain_size;
     ranges.emplace_back(begin, end);
     begin = end;
   }
@@ -110,7 +169,7 @@ inline auto split_input_range(const IndexRange &range, std::size_t n_threads,
   return ranges;
 }
 
-// Execute the Worker over the IndexRange in parallel
+// Execute the Worker over the IndexRange in parallel.
 template <typename Worker>
 inline void parallel_for(std::size_t begin, std::size_t end, Worker &worker,
                          std::size_t n_threads, std::size_t grain_size = 1) {
@@ -124,21 +183,19 @@ inline void parallel_for(std::size_t begin, std::size_t end, Worker &worker,
   // split the work
   IndexRange input_range(begin, end);
   std::vector<IndexRange> ranges =
-    split_input_range(input_range, n_threads, grain_size);
+      split_input_range(input_range, n_threads, grain_size);
   if (ranges.size() <= 1) {
     worker(begin, end);
     return;
   }
 
-  std::exception_ptr worker_exception = nullptr;
-  std::mutex worker_exception_mutex;
+  detail::WorkerFailure worker_failure;
   std::vector<std::thread> threads;
   threads.reserve(ranges.size());
-  ThreadJoiner thread_joiner(threads);
+  detail::ThreadJoiner thread_joiner(threads);
   for (auto &range : ranges) {
-    threads.emplace_back(&worker_thread<Worker>, std::ref(worker), range,
-                         std::ref(worker_exception),
-                         std::ref(worker_exception_mutex));
+    threads.emplace_back(&detail::worker_thread<Worker>, std::ref(worker),
+                         range, std::ref(worker_failure));
   }
 
   for (auto &thread : threads) {
@@ -147,13 +204,66 @@ inline void parallel_for(std::size_t begin, std::size_t end, Worker &worker,
     }
   }
 
-  if (worker_exception != nullptr) {
-    std::rethrow_exception(worker_exception);
-  }
+  worker_failure.throw_if_set();
 
   return;
 }
 
+template <typename Worker>
+inline void parallel_for(std::size_t end, Worker &worker, std::size_t n_threads,
+                         std::size_t grain_size = 1) {
+  parallel_for(0, end, worker, n_threads, grain_size);
+}
+
+// Execute the Worker over the IndexRange in parallel, passing a zero-based
+// chunk index as the third worker argument.
+template <typename Worker>
+inline void parallel_for_indexed(std::size_t begin, std::size_t end,
+                                 Worker &worker, std::size_t n_threads,
+                                 std::size_t grain_size = 1) {
+  if (begin >= end) {
+    return;
+  }
+  if (n_threads <= 1) {
+    worker(begin, end, 0);
+    return;
+  }
+  IndexRange input_range(begin, end);
+  std::vector<IndexRange> ranges =
+      split_input_range(input_range, n_threads, grain_size);
+  if (ranges.size() <= 1) {
+    worker(begin, end, 0);
+    return;
+  }
+
+  detail::WorkerFailure worker_failure;
+  std::vector<std::thread> threads;
+  threads.reserve(ranges.size());
+  detail::ThreadJoiner thread_joiner(threads);
+  for (std::size_t chunk_id = 0; chunk_id < ranges.size(); ++chunk_id) {
+    threads.emplace_back(&detail::worker_thread_indexed<Worker>,
+                         std::ref(worker), ranges[chunk_id], chunk_id,
+                         std::ref(worker_failure));
+  }
+
+  for (auto &thread : threads) {
+    if (thread.joinable()) {
+      thread.join();
+    }
+  }
+
+  worker_failure.throw_if_set();
+
+  return;
+}
+
+template <typename Worker>
+inline void parallel_for_indexed(std::size_t end, Worker &worker,
+                                 std::size_t n_threads,
+                                 std::size_t grain_size = 1) {
+  parallel_for_indexed(0, end, worker, n_threads, grain_size);
+}
+
 } // namespace pforr
 
-#endif // PFORR
+#endif // PFORR_PFORR_H

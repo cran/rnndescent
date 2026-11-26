@@ -32,11 +32,19 @@ rpf_nbrs <- rpf_knn_query(
   k = 15
 )
 
+## ----reference graph----------------------------------------------------------
+reference_nbrs <- rpf_knn_query(
+  query = iris_even,
+  reference = iris_even,
+  forest = rpf_index,
+  k = 15
+)
+
 ## ----graph_knn_query----------------------------------------------------------
 graph_nbrs <- graph_knn_query(
   query = iris_odd,
   reference = iris_even,
-  reference_graph = rpf_nbrs,
+  reference_graph = reference_nbrs,
   k = 15
 )
 
@@ -59,7 +67,7 @@ iris_logical_brute_nbrs <- brute_force_knn_query(
 graph_nbrs <- graph_knn_query(
   query = iris_odd,
   reference = iris_even,
-  reference_graph = rpf_nbrs,
+  reference_graph = reference_nbrs,
   init = iris_logical_brute_nbrs$idx,
   k = 15
 )
@@ -68,7 +76,7 @@ graph_nbrs <- graph_knn_query(
 forest_init_nbrs <- graph_knn_query(
   query = iris_odd,
   reference = iris_even,
-  reference_graph = rpf_nbrs,
+  reference_graph = reference_nbrs,
   init = rpf_index,
   k = 15
 )
@@ -77,15 +85,17 @@ forest_init_nbrs <- graph_knn_query(
 set.seed(42)
 iris_search_graph <- prepare_search_graph(
   data = iris_even,
-  graph = rpf_nbrs,
+  graph = reference_nbrs,
   diversify_prob = 0.1,
   pruning_degree_multiplier = 1.5
 )
 
-## ----iris search graph histogram----------------------------------------------
+## ----iris-search-graph-histogram, fig.alt = "Histogram of iris search graph degrees, showing the distribution of edge counts after pruning."----
 search_graph_edges <- diff(iris_search_graph@p)
-hist(search_graph_edges,
-  main = "Distribution of search graph edges", xlab = "# edges"
+hist(
+  search_graph_edges,
+  main = "Distribution of search graph edges",
+  xlab = "# edges"
 )
 range(search_graph_edges)
 

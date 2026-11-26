@@ -38,19 +38,11 @@ binary_data <- matrix(as.logical(rbinom(1000, 1, 0.5)), ncol = 10)
 
 ## ----binary knn implicit------------------------------------------------------
 bin_knn_imp <-
-  rpf_knn(binary_data,
-    k = 15,
-    metric = "hamming",
-    margin = "implicit"
-  )
+  rpf_knn(binary_data, k = 15, metric = "hamming", margin = "implicit")
 
 ## ----binary knn explicit------------------------------------------------------
 bin_knn_exp <-
-  rpf_knn(binary_data,
-    k = 15,
-    metric = "hamming",
-    margin = "explicit"
-  )
+  rpf_knn(binary_data, k = 15, metric = "hamming", margin = "explicit")
 
 ## ----filter-------------------------------------------------------------------
 iris_filtered <-

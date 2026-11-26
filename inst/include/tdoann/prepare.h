@@ -22,13 +22,17 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
 // CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// OF SUCH DAMAGE.
+// POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef TDOANN_PREPARE_H
 #define TDOANN_PREPARE_H
 
 #include <algorithm>
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <numeric>
+#include <type_traits>
 #include <vector>
 
 #include "distancebase.h"
@@ -37,6 +41,8 @@
 #include "random.h"
 
 namespace tdoann {
+
+constexpr std::size_t diversification_rows_per_worker = 100;
 
 // Returns a vector of indices that represents the sorted order of elements in
 // the range [first, last).
@@ -54,21 +60,6 @@ auto order(It first, It last) -> std::vector<std::size_t> {
 }
 
 template <typename Out, typename Idx>
-auto kth_smallest_distance(const SparseNNGraph<Out, Idx> &graph,
-                           std::size_t item_i, std::size_t k_small) -> Out {
-  // This is coupled to the internals of SparseGraph
-  auto start_itr = graph.dist.begin() + graph.row_ptr[item_i];
-  auto end_itr = graph.dist.begin() + graph.row_ptr[item_i + 1];
-  std::vector<Out> distances(start_itr, end_itr);
-
-  // k_small is 1-based, but nth_element expects a 0-based iterator.
-  const auto kth = k_small - 1;
-  std::nth_element(distances.begin(), distances.begin() + kth,
-                   distances.end());
-  return distances[kth];
-}
-
-template <typename Out, typename Idx>
 void degree_prune_impl(const SparseNNGraph<Out, Idx> &graph,
                        SparseNNGraph<Out, Idx> &result, std::size_t max_degree,
                        std::size_t begin, std::size_t end) {
@@ -78,11 +69,18 @@ void degree_prune_impl(const SparseNNGraph<Out, Idx> &graph,
       continue;
     }
 
-    auto max_degree_dist = kth_smallest_distance(graph, i, max_degree);
-    for (std::size_t j = 0; j < unpruned_n_nbrs; j++) {
-      if (graph.distance(i, j) > max_degree_dist) {
-        result.mark_for_deletion(i, j);
-      }
+    std::vector<std::size_t> ordered(unpruned_n_nbrs);
+    std::iota(ordered.begin(), ordered.end(), static_cast<std::size_t>(0));
+    auto cmp = [&](std::size_t a, std::size_t b) {
+      const auto dist_a = graph.distance(i, a);
+      const auto dist_b = graph.distance(i, b);
+      return dist_a < dist_b ||
+             (dist_a == dist_b && graph.index(i, a) < graph.index(i, b));
+    };
+    std::nth_element(ordered.begin(), ordered.begin() + max_degree,
+                     ordered.end(), cmp);
+    for (std::size_t j = max_degree; j < unpruned_n_nbrs; j++) {
+      result.mark_for_deletion(i, ordered[j]);
     }
   }
 }
@@ -101,14 +99,21 @@ auto degree_prune(const SparseNNGraph<Out, Idx> &graph, std::size_t max_degree,
 
 // remove neighbors which are "occlusions"
 // for point i with neighbors p and q, if d(p, q) < d(i, p), then p occludes q
-template <typename Out, typename Idx>
+template <typename Out, typename Idx, typename Stop = std::nullptr_t,
+          typename CalculateFour = std::nullptr_t>
 void remove_long_edges_impl(const SparseNNGraph<Out, Idx> &graph,
                             const BaseDistance<Out, Idx> &distance,
                             RandomGenerator &rand, double prune_probability,
                             SparseNNGraph<Out, Idx> &result, std::size_t begin,
-                            std::size_t end) {
+                            std::size_t end, const Stop &stop = nullptr,
+                            const CalculateFour &calculate_four = nullptr) {
   static constexpr auto zero = Out{0};
   for (std::size_t i = begin; i < end; i++) {
+    if constexpr (!std::is_same_v<Stop, std::nullptr_t>) {
+      if (stop()) {
+        return;
+      }
+    }
     const std::size_t n_nbrs = graph.n_nbrs(i);
     if (n_nbrs == 0) {
       continue;
@@ -124,25 +129,68 @@ void remove_long_edges_impl(const SparseNNGraph<Out, Idx> &graph,
     // loop starts at 1: we always keep the nearest neighbor so we start with
     // the next nearest neighbor
     for (std::size_t j = 1; j < n_nbrs; j++) {
+      if constexpr (!std::is_same_v<Stop, std::nullptr_t>) {
+        if (stop()) {
+          return;
+        }
+      }
       const std::size_t jth_nearest = ordered[j];
       const std::size_t ijn = row_ptr_i + jth_nearest;
       Idx nbr_j = graph.col_idx[ijn];
       Out dist_ij = graph.dist[ijn];
 
-      // check the distance between j and all retained neighbors (k) so far
-      for (std::size_t k = 0; k < j; k++) {
-        const std::size_t kth_nearest = ordered[k];
-        if (!retained[kth_nearest]) {
-          // k was already considered an occlusion, no need to test
-          continue;
+      const auto prunes = [&](Out dist_jk) {
+        const auto draw = rand.unif();
+        return dist_jk < dist_ij && draw < prune_probability;
+      };
+      if constexpr (!std::is_same_v<CalculateFour, std::nullptr_t>) {
+        std::array<Idx, 4> targets;
+        std::size_t filled = 0;
+        bool pruned = false;
+        for (std::size_t k = 0; k < j; ++k) {
+          const auto kth_nearest = ordered[k];
+          if (!retained[kth_nearest]) {
+            continue;
+          }
+          targets[filled++] = graph.col_idx[row_ptr_i + kth_nearest];
+          if (filled == targets.size()) {
+            const auto values = calculate_four(nbr_j, targets);
+            // Apply comparisons and draw in scalar order up to the first prune.
+            for (const auto value : values) {
+              if (prunes(value)) {
+                pruned = true;
+                break;
+              }
+            }
+            filled = 0;
+            if (pruned) {
+              break;
+            }
+          }
         }
-        Idx nbr_k = graph.col_idx[row_ptr_i + kth_nearest];
-        Out dist_jk = distance.calculate(nbr_j, nbr_k);
-        auto rand_val = rand.unif();
-        if (dist_jk < dist_ij && rand_val < prune_probability) {
-          // j occludes k, mark j for deletion
-          retained[jth_nearest] = 0;
-          break;
+        if (!pruned) {
+          for (std::size_t lane = 0; lane < filled; ++lane) {
+            if (prunes(distance.calculate(nbr_j, targets[lane]))) {
+              pruned = true;
+              break;
+            }
+          }
+        }
+        retained[jth_nearest] = !pruned;
+      } else {
+        // check the distance between j and all retained neighbors (k) so far
+        for (std::size_t k = 0; k < j; k++) {
+          const std::size_t kth_nearest = ordered[k];
+          if (!retained[kth_nearest]) {
+            // k was already considered an occlusion, no need to test
+            continue;
+          }
+          Idx nbr_k = graph.col_idx[row_ptr_i + kth_nearest];
+          if (prunes(distance.calculate(nbr_j, nbr_k))) {
+            // j occludes k, mark j for deletion
+            retained[jth_nearest] = 0;
+            break;
+          }
         }
       }
     }
@@ -168,21 +216,22 @@ auto remove_long_edges(const SparseNNGraph<Out, Idx> &graph,
   return result;
 }
 
-template <typename Out, typename Idx>
+template <typename Out, typename Idx, typename CalculateFour = std::nullptr_t>
 auto remove_long_edges(const SparseNNGraph<Out, Idx> &graph,
                        const BaseDistance<Out, Idx> &distance,
                        ParallelRandomProvider &parallel_rand,
                        double prune_probability, std::size_t n_threads,
-                       ProgressBase &progress, const Executor &executor)
+                       ProgressBase &progress, const Executor &executor,
+                       const CalculateFour &calculate_four = nullptr)
     -> SparseNNGraph<Out, Idx> {
   SparseNNGraph<Out, Idx> result(graph.row_ptr, graph.col_idx, graph.dist);
   parallel_rand.initialize();
   auto worker = [&](std::size_t begin, std::size_t end) {
     auto rand = parallel_rand.get_parallel_instance(end);
     remove_long_edges_impl(graph, distance, *rand, prune_probability, result,
-                           begin, end);
+                           begin, end, nullptr, calculate_four);
   };
-  ExecutionParams exec_params{100 * n_threads};
+  ExecutionParams exec_params{diversification_rows_per_worker * n_threads};
   dispatch_work(worker, graph.n_points, n_threads, exec_params, progress,
                 executor);
   return result;

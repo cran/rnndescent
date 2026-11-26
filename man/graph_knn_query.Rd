@@ -29,7 +29,9 @@ or \code{\link[Matrix:sparseMatrix]{Matrix::sparseMatrix()}}. Sparse matrices sh
 format. Dataframes will be converted to \code{numerical} matrix format
 internally, so if your data columns are \code{logical} and intended to be used
 with the specialized binary \code{metric}s, you should convert it to a logical
-matrix first (otherwise you will get the slower dense numerical version).}
+matrix first (otherwise you will get the slower dense numerical version).
+Numeric feature values must be finite: \code{NA}, \code{NaN}, \code{Inf} and \code{-Inf}
+are not allowed.}
 
 \item{reference}{Matrix of \code{m} reference items, with observations in the rows
 and features in the columns. The nearest neighbors to the queries are
@@ -38,7 +40,9 @@ observations in the columns, by setting \code{obs = "C"}, which should be more
 efficient. The \code{query} data must be passed in the same format and
 orientation as \code{reference}. Possible formats are \code{\link[base:data.frame]{base::data.frame()}},
 \code{\link[base:matrix]{base::matrix()}} or \code{\link[Matrix:sparseMatrix]{Matrix::sparseMatrix()}}. Sparse matrices should be in
-\code{dgCMatrix} format.}
+\code{dgCMatrix} format.
+Numeric feature values must be finite: \code{NA}, \code{NaN}, \code{Inf} and \code{-Inf}
+are not allowed.}
 
 \item{reference_graph}{Search graph of the \code{reference} data. A neighbor
 graph, such as that output from \code{\link[=nnd_knn]{nnd_knn()}} can be used, but
@@ -56,6 +60,8 @@ specified.}
 \item \code{"correlation"} (1 minus the Pearson correlation)
 \item \code{"cosine"}
 \item \code{"dice"}
+\item \code{"dot"} (1 minus the normalized dot product, capped at 1;
+1 if either vector is zero)
 \item \code{"euclidean"}
 \item \code{"hamming"}
 \item \code{"haversine"} (great-circle distance for 2D latitude/longitude in
@@ -67,12 +73,16 @@ degrees are encountered)
 \item \code{"kulsinski"}
 \item \code{"sqeuclidean"} (squared Euclidean)
 \item \code{"manhattan"}
+\item \code{"matching"} (fraction of features whose zero/nonzero indicators
+differ)
 \item \code{"rogerstanimoto"}
 \item \code{"russellrao"}
 \item \code{"sokalmichener"}
 \item \code{"sokalsneath"}
 \item \code{"spearmanr"} (1 minus the Spearman rank correlation)
 \item \code{"symmetrickl"} (symmetric Kullback-Leibler divergence)
+\item \code{"trueangular"} (angle between vectors divided by pi; 0 for two zero
+vectors and 1/2 when exactly one vector is zero)
 \item \code{"tsss"} (Triangle Area Similarity-Sector Area Similarity or TS-SS
 metric)
 \item \code{"yule"}
@@ -110,19 +120,20 @@ random neighbors are created. If provided, the input format must be one of:
 \item A list containing:
 \itemize{
 \item \code{idx} an \code{n} by \code{k} matrix containing the nearest neighbor indices.
-\item \code{dist} (optional) an \code{n} by \code{k} matrix containing the nearest neighbor
-distances.
+\item \code{dist} (optional) an \code{n} by \code{k} matrix containing the nearest
+neighbor distances.
 }
 
 If \code{k} and \code{init} are specified as arguments to this function, and the
 number of neighbors provided in \code{init} is not equal to \code{k} then:
 \itemize{
-\item if \code{k} is smaller, only the \code{k} closest values in \code{init} are retained.
-\item if \code{k} is larger, then random neighbors will be chosen to fill \code{init} to
-the size of \code{k}. Note that there is no checking if any of the random
-neighbors are duplicates of what is already in \code{init} so effectively fewer
-than \code{k} neighbors may be chosen for some observations under these
-circumstances.
+\item if \code{k} is smaller, only the \code{k} closest values in \code{init} are
+retained.
+\item if \code{k} is larger, then random neighbors will be chosen to fill
+\code{init} to the size of \code{k}. Note that there is no checking if any of
+the random neighbors are duplicates of what is already in \code{init} so
+effectively fewer than \code{k} neighbors may be chosen for some
+observations under these circumstances.
 }
 
 If the input distances are omitted, they will be calculated for you.
@@ -225,7 +236,8 @@ iris_query_nn <- graph_knn_query(iris_query, iris_ref, iris_ref_search_graph,
 \references{
 Harwood, B., & Drummond, T. (2016).
 Fanng: Fast approximate nearest neighbour graphs.
-In \emph{Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition}
+In \emph{Proceedings of the IEEE Conference on Computer Vision and Pattern
+Recognition}
 (pp. 5713-5722).
 
 Iwasaki, M., & Miyazaki, D. (2018).

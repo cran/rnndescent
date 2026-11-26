@@ -379,7 +379,7 @@ index in step 1, then you can just pass that data as the query in step
 this case that are slightly more efficient, see for example
 <code>nnd_knn</code> and <code>rpf_knn</code>. Nonetheless, querying the
 index with the original data can produce a more accurate result. See the
-<a href="hubness.Rmd">hubness</a> vignette for an example of that.</p>
+<a href="hubness.html">hubness</a> vignette for an example of that.</p>
 <p>Below we will see some of the options that <code>rnndescent</code>
 has for querying an index.</p>
 <p>For convenience, I will use all the even rows of the
@@ -458,12 +458,21 @@ least you must provide a <code>reference_graph</code> to search, the
 <code>reference</code> data that built the <code>reference_graph</code>
 (so we can calculate distances), <code>k</code> the number of neighbors
 you want, and of course the <code>query</code> data:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>graph_nbrs <span class="ot">&lt;-</span> <span class="fu">graph_knn_query</span>(</span>
-<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>  <span class="at">query =</span> iris_odd,</span>
+<p>First we need a graph among the reference points themselves. The
+earlier <code>rpf_nbrs</code> describes odd query rows against even
+reference rows, so it is not a graph of the reference data.</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>reference_nbrs <span class="ot">&lt;-</span> <span class="fu">rpf_knn_query</span>(</span>
+<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a>  <span class="at">query =</span> iris_even,</span>
 <span id="cb6-3"><a href="#cb6-3" tabindex="-1"></a>  <span class="at">reference =</span> iris_even,</span>
-<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a>  <span class="at">reference_graph =</span> rpf_nbrs,</span>
+<span id="cb6-4"><a href="#cb6-4" tabindex="-1"></a>  <span class="at">forest =</span> rpf_index,</span>
 <span id="cb6-5"><a href="#cb6-5" tabindex="-1"></a>  <span class="at">k =</span> <span class="dv">15</span></span>
 <span id="cb6-6"><a href="#cb6-6" tabindex="-1"></a>)</span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>graph_nbrs <span class="ot">&lt;-</span> <span class="fu">graph_knn_query</span>(</span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>  <span class="at">query =</span> iris_odd,</span>
+<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>  <span class="at">reference =</span> iris_even,</span>
+<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>  <span class="at">reference_graph =</span> reference_nbrs,</span>
+<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a>  <span class="at">k =</span> <span class="dv">15</span></span>
+<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a>)</span></code></pre></div>
 <p>If you aren’t using the <code>metric = &quot;euclidean&quot;</code>, you should
 also provide the same <code>metric</code> that you used to build the
 <code>reference_graph</code>. The default <code>metric</code> is always
@@ -490,12 +499,14 @@ library. The larger the value, the more back-tracking is permitted. The
 exact meaning of the value is related to how large a distance is
 considered “close enough” the current neighbor list of the query to be
 worth exploring.</p>
-<p><code>epsilon = 0.1</code> means that the query-candidate distance is
-allowed to be 10% larger than the largest distance in the neighbor list.
-If you set <code>epsilon = 0.2</code>, for example, then the
-query-candidate distance is allowed to be 20% higher than the largest
-distance in the neighbor list and so on. If you set
-<code>epsilon = 0</code> then you get a pure greedy search.</p>
+<p><code>epsilon</code> applies to the distance scale used internally by
+the search. For default Euclidean search, that scale is squared
+distance: <code>epsilon = 0.1</code> allows a squared distance 10%
+larger, or an ordinary distance about 4.88% larger. With
+<code>use_alt_metric = FALSE</code>, the same setting allows an ordinary
+Euclidean distance 10% larger. Other internal transformations do not all
+give the same percentage on the returned distance scale. Setting
+<code>epsilon = 0</code> gives a pure greedy search.</p>
 <p>It’s hard to give a general rule for what value to set, because it’s
 highly dependent on the distribution of distances in the dataset and
 that is determined by the distance metric and the dimensionality of the
@@ -543,35 +554,35 @@ input data. Even a brute force search can be very fast on this data.
 This could be a good way to get a good guess for the real data.</p>
 <p>This is a very contrived example with <code>iris</code>, but let’s do
 it anyway:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a>numeric_iris <span class="ot">&lt;-</span> iris[, <span class="fu">sapply</span>(iris, is.numeric)]</span>
-<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>logical_iris <span class="ot">&lt;-</span> <span class="fu">sweep</span>(numeric_iris, <span class="dv">2</span>, <span class="fu">colMeans</span>(numeric_iris), <span class="st">&quot;&gt;&quot;</span>)</span>
-<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>logical_iris_even <span class="ot">&lt;-</span> logical_iris[<span class="fu">seq_len</span>(<span class="fu">nrow</span>(logical_iris)) <span class="sc">%%</span> <span class="dv">2</span> <span class="sc">==</span> <span class="dv">0</span>, ]</span>
-<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>logical_iris_odd <span class="ot">&lt;-</span> logical_iris[<span class="fu">seq_len</span>(<span class="fu">nrow</span>(logical_iris)) <span class="sc">%%</span> <span class="dv">2</span> <span class="sc">==</span> <span class="dv">1</span>, ]</span>
-<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a><span class="fu">head</span>(logical_iris_even)</span>
-<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a><span class="co">#&gt;      Sepal.Length Sepal.Width Petal.Length Petal.Width</span></span>
-<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a><span class="co">#&gt; [1,]        FALSE       FALSE        FALSE       FALSE</span></span>
-<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a><span class="co">#&gt; [2,]        FALSE        TRUE        FALSE       FALSE</span></span>
-<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a><span class="co">#&gt; [3,]        FALSE        TRUE        FALSE       FALSE</span></span>
-<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a><span class="co">#&gt; [4,]        FALSE        TRUE        FALSE       FALSE</span></span>
-<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a><span class="co">#&gt; [5,]        FALSE        TRUE        FALSE       FALSE</span></span>
-<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a><span class="co">#&gt; [6,]        FALSE        TRUE        FALSE       FALSE</span></span></code></pre></div>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>numeric_iris <span class="ot">&lt;-</span> iris[, <span class="fu">sapply</span>(iris, is.numeric)]</span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>logical_iris <span class="ot">&lt;-</span> <span class="fu">sweep</span>(numeric_iris, <span class="dv">2</span>, <span class="fu">colMeans</span>(numeric_iris), <span class="st">&quot;&gt;&quot;</span>)</span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>logical_iris_even <span class="ot">&lt;-</span> logical_iris[<span class="fu">seq_len</span>(<span class="fu">nrow</span>(logical_iris)) <span class="sc">%%</span> <span class="dv">2</span> <span class="sc">==</span> <span class="dv">0</span>, ]</span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>logical_iris_odd <span class="ot">&lt;-</span> logical_iris[<span class="fu">seq_len</span>(<span class="fu">nrow</span>(logical_iris)) <span class="sc">%%</span> <span class="dv">2</span> <span class="sc">==</span> <span class="dv">1</span>, ]</span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a><span class="fu">head</span>(logical_iris_even)</span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a><span class="co">#&gt;      Sepal.Length Sepal.Width Petal.Length Petal.Width</span></span>
+<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a><span class="co">#&gt; [1,]        FALSE       FALSE        FALSE       FALSE</span></span>
+<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a><span class="co">#&gt; [2,]        FALSE        TRUE        FALSE       FALSE</span></span>
+<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a><span class="co">#&gt; [3,]        FALSE        TRUE        FALSE       FALSE</span></span>
+<span id="cb8-10"><a href="#cb8-10" tabindex="-1"></a><span class="co">#&gt; [4,]        FALSE        TRUE        FALSE       FALSE</span></span>
+<span id="cb8-11"><a href="#cb8-11" tabindex="-1"></a><span class="co">#&gt; [5,]        FALSE        TRUE        FALSE       FALSE</span></span>
+<span id="cb8-12"><a href="#cb8-12" tabindex="-1"></a><span class="co">#&gt; [6,]        FALSE        TRUE        FALSE       FALSE</span></span></code></pre></div>
 <p>Do a brute force search on the binarized data:</p>
-<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a>iris_logical_brute_nbrs <span class="ot">&lt;-</span> <span class="fu">brute_force_knn_query</span>(</span>
-<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>  <span class="at">query =</span> logical_iris_odd,</span>
-<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>  <span class="at">reference =</span> logical_iris_even,</span>
-<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>  <span class="at">k =</span> <span class="dv">15</span>,</span>
-<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a>  <span class="at">metric =</span> <span class="st">&quot;hamming&quot;</span></span>
-<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a>)</span></code></pre></div>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>iris_logical_brute_nbrs <span class="ot">&lt;-</span> <span class="fu">brute_force_knn_query</span>(</span>
+<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>  <span class="at">query =</span> logical_iris_odd,</span>
+<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a>  <span class="at">reference =</span> logical_iris_even,</span>
+<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a>  <span class="at">k =</span> <span class="dv">15</span>,</span>
+<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a>  <span class="at">metric =</span> <span class="st">&quot;hamming&quot;</span></span>
+<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a>)</span></code></pre></div>
 <p>Then pass the indices of the brute force search to
 <code>graph_knn_query</code>, which will generate the Euclidean
 distances for you:</p>
-<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" tabindex="-1"></a>graph_nbrs <span class="ot">&lt;-</span> <span class="fu">graph_knn_query</span>(</span>
-<span id="cb9-2"><a href="#cb9-2" tabindex="-1"></a>  <span class="at">query =</span> iris_odd,</span>
-<span id="cb9-3"><a href="#cb9-3" tabindex="-1"></a>  <span class="at">reference =</span> iris_even,</span>
-<span id="cb9-4"><a href="#cb9-4" tabindex="-1"></a>  <span class="at">reference_graph =</span> rpf_nbrs,</span>
-<span id="cb9-5"><a href="#cb9-5" tabindex="-1"></a>  <span class="at">init =</span> iris_logical_brute_nbrs<span class="sc">$</span>idx,</span>
-<span id="cb9-6"><a href="#cb9-6" tabindex="-1"></a>  <span class="at">k =</span> <span class="dv">15</span></span>
-<span id="cb9-7"><a href="#cb9-7" tabindex="-1"></a>)</span></code></pre></div>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a>graph_nbrs <span class="ot">&lt;-</span> <span class="fu">graph_knn_query</span>(</span>
+<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>  <span class="at">query =</span> iris_odd,</span>
+<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>  <span class="at">reference =</span> iris_even,</span>
+<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a>  <span class="at">reference_graph =</span> reference_nbrs,</span>
+<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>  <span class="at">init =</span> iris_logical_brute_nbrs<span class="sc">$</span>idx,</span>
+<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a>  <span class="at">k =</span> <span class="dv">15</span></span>
+<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a>)</span></code></pre></div>
 <p>Whether this is worth doing all depends on whether the time taken to
 binarize the data followed by the initial search on the binary data (it
 doesn’t have to be brute force) gives you a good enough guess to save
@@ -582,13 +593,13 @@ time in the “real” search with <code>graph_knn_query</code>.</p>
 <p>If you have previously built an RP Forest with the data you may also
 use that to initialize the query. We can re-use <code>rpf_index</code>
 here.</p>
-<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" tabindex="-1"></a>forest_init_nbrs <span class="ot">&lt;-</span> <span class="fu">graph_knn_query</span>(</span>
-<span id="cb10-2"><a href="#cb10-2" tabindex="-1"></a>  <span class="at">query =</span> iris_odd,</span>
-<span id="cb10-3"><a href="#cb10-3" tabindex="-1"></a>  <span class="at">reference =</span> iris_even,</span>
-<span id="cb10-4"><a href="#cb10-4" tabindex="-1"></a>  <span class="at">reference_graph =</span> rpf_nbrs,</span>
-<span id="cb10-5"><a href="#cb10-5" tabindex="-1"></a>  <span class="at">init =</span> rpf_index,</span>
-<span id="cb10-6"><a href="#cb10-6" tabindex="-1"></a>  <span class="at">k =</span> <span class="dv">15</span></span>
-<span id="cb10-7"><a href="#cb10-7" tabindex="-1"></a>)</span></code></pre></div>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a>forest_init_nbrs <span class="ot">&lt;-</span> <span class="fu">graph_knn_query</span>(</span>
+<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a>  <span class="at">query =</span> iris_odd,</span>
+<span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a>  <span class="at">reference =</span> iris_even,</span>
+<span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a>  <span class="at">reference_graph =</span> reference_nbrs,</span>
+<span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a>  <span class="at">init =</span> rpf_index,</span>
+<span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a>  <span class="at">k =</span> <span class="dv">15</span></span>
+<span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a>)</span></code></pre></div>
 <p>In general, the RP forest initialization is likely to be a better
 initial guess than random, but in terms of a speed/accuracy trade-off,
 using a large forest may not be the best choice. You may want to use
@@ -609,28 +620,28 @@ can actually be reached via the k-nearest neighbors graph. Some nodes
 just aren’t very popular and may not be in the neighbor list of
 <em>any</em> other item. That means you can never reach them via the
 k-nearest neighbors graph, no matter how thoroughly you search it.</p>
-<p>We can solve this problem by reversing all the edges in the graph and
-adding them to the graph. So if you can get to item <code>i</code> from
-item <code>j</code>, you can now get to item <code>j</code> from item
-<code>i</code>. This solves one problem but adds some more which is that
-just like some items are very unpopular, other items might be very
-popular and appear often in the neighbor list of other items. Having a
-large number of these edges in the graph can make the search very slow.
-We therefore need to prune some of these edges.</p>
+<p>Reversing edges and adding them to the graph can help with this
+problem. If an edge from <code>j</code> to <code>i</code> is retained,
+its reverse offers a route from <code>i</code> to <code>j</code>. This
+cannot connect separate components, and pruning can remove edges again.
+Adding reverse edges also introduces another problem, which is that just
+like some items are very unpopular, other items might be very popular
+and appear often in the neighbor list of other items. Having a large
+number of these edges in the graph can make the search very slow. We
+therefore need to prune some of these edges.</p>
 <p><code>prepare_search_graph</code> is a function that will take a
 k-nearest neighbor graph and add edges to it to make it more useful for
 a search. The procedure is based on the process described in <span class="citation">(Harwood and Drummond 2016)</span> and consists of:</p>
 <ol style="list-style-type: decimal">
-<li>Reversing all the edges in the graph.</li>
-<li>“Diversifying” the graph by “occlusion pruning”. This considers
-triplets of points, and removes long edges which are probably redundant.
-For an item <span class="math inline">\(i\)</span> with neighbors <span class="math inline">\(p\)</span> and <span class="math inline">\(q\)</span> if the distances <span class="math inline">\(d_{pq} \lt d_{ip}\)</span> i.e. the neighbors are
-closer to each other than they are to <span class="math inline">\(i\)</span>, then it is said that <span class="math inline">\(p\)</span> occludes <span class="math inline">\(q\)</span> and we don’t need both edges <span class="math inline">\(i \rightarrow p\)</span> and <span class="math inline">\(i \rightarrow q\)</span> – it’s likely that <span class="math inline">\(q\)</span> is in the neighbor list of <span class="math inline">\(p\)</span> or vice versa, so it’s unlikely that we
-are doing any harm by getting rid of <span class="math inline">\(i
-\rightarrow p\)</span>.</li>
-<li>After occlusion pruning, if any item still has an excessive number
-of edges, the longest edges are removed until the number of edges is
-below the threshold.</li>
+<li>Diversifying the forward edges by “occlusion pruning”. For an item
+<span class="math inline">\(i\)</span>, consider a closer retained
+neighbor <span class="math inline">\(p\)</span> and a farther candidate
+<span class="math inline">\(q\)</span>. If <span class="math inline">\(d_{pq} \lt d_{iq}\)</span>, then <span class="math inline">\(p\)</span> occludes <span class="math inline">\(q\)</span>: the edge <span class="math inline">\(i
+\rightarrow q\)</span> can be removed because <span class="math inline">\(q\)</span> may be reachable through <span class="math inline">\(p\)</span>.</li>
+<li>Reversing the remaining edges and diversifying those reverse edges
+in turn.</li>
+<li>Merging the forward and reverse edges, then removing the longest
+edges from any item whose degree exceeds the threshold.</li>
 </ol>
 <p>To control all this pruning the following parameters are
 available:</p>
@@ -660,34 +671,36 @@ which means to allow as many as 50% more edge than the original graph.
 So if the input graph was for <code>k = 15</code>, each item in the
 search graph will have at most <code>15 * 1.5 = 22</code> edges.</p>
 <p>Let’s see how this works on the <code>iris</code> neighbors:</p>
-<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">42</span>)</span>
-<span id="cb11-2"><a href="#cb11-2" tabindex="-1"></a>iris_search_graph <span class="ot">&lt;-</span> <span class="fu">prepare_search_graph</span>(</span>
-<span id="cb11-3"><a href="#cb11-3" tabindex="-1"></a>  <span class="at">data =</span> iris_even,</span>
-<span id="cb11-4"><a href="#cb11-4" tabindex="-1"></a>  <span class="at">graph =</span> rpf_nbrs,</span>
-<span id="cb11-5"><a href="#cb11-5" tabindex="-1"></a>  <span class="at">diversify_prob =</span> <span class="fl">0.1</span>,</span>
-<span id="cb11-6"><a href="#cb11-6" tabindex="-1"></a>  <span class="at">pruning_degree_multiplier =</span> <span class="fl">1.5</span></span>
-<span id="cb11-7"><a href="#cb11-7" tabindex="-1"></a>)</span></code></pre></div>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">42</span>)</span>
+<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a>iris_search_graph <span class="ot">&lt;-</span> <span class="fu">prepare_search_graph</span>(</span>
+<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a>  <span class="at">data =</span> iris_even,</span>
+<span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a>  <span class="at">graph =</span> reference_nbrs,</span>
+<span id="cb12-5"><a href="#cb12-5" tabindex="-1"></a>  <span class="at">diversify_prob =</span> <span class="fl">0.1</span>,</span>
+<span id="cb12-6"><a href="#cb12-6" tabindex="-1"></a>  <span class="at">pruning_degree_multiplier =</span> <span class="fl">1.5</span></span>
+<span id="cb12-7"><a href="#cb12-7" tabindex="-1"></a>)</span></code></pre></div>
 <p>Because the returned search graph can contain different number of
 edges per item, the neighbor graph format isn’t suitable. Instead you
 get back a sparse matrix, specifically a <code>dgCMatrix</code>. Here’s
 a histogram of how the edges are distributed:</p>
-<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" tabindex="-1"></a>search_graph_edges <span class="ot">&lt;-</span> <span class="fu">diff</span>(iris_search_graph<span class="sc">@</span>p)</span>
-<span id="cb12-2"><a href="#cb12-2" tabindex="-1"></a><span class="fu">hist</span>(search_graph_edges,</span>
-<span id="cb12-3"><a href="#cb12-3" tabindex="-1"></a>  <span class="at">main =</span> <span class="st">&quot;Distribution of search graph edges&quot;</span>, <span class="at">xlab =</span> <span class="st">&quot;# edges&quot;</span></span>
-<span id="cb12-4"><a href="#cb12-4" tabindex="-1"></a>)</span></code></pre></div>
-<p><img role="img" src="data:image/png;base64,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" /><!-- --></p>
-<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a><span class="fu">range</span>(search_graph_edges)</span>
-<span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a><span class="co">#&gt; [1]  7 22</span></span></code></pre></div>
-<p>So most items have around about <code>k = 15</code> edges just like
-the nearest neighbor graph. But some have have the maximum number of
-edges and few have only 10 edges.</p>
-<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a>search_nbrs <span class="ot">&lt;-</span> <span class="fu">graph_knn_query</span>(</span>
-<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a>  <span class="at">query =</span> iris_odd,</span>
-<span id="cb14-3"><a href="#cb14-3" tabindex="-1"></a>  <span class="at">reference =</span> iris_even,</span>
-<span id="cb14-4"><a href="#cb14-4" tabindex="-1"></a>  <span class="at">reference_graph =</span> iris_search_graph,</span>
-<span id="cb14-5"><a href="#cb14-5" tabindex="-1"></a>  <span class="at">init =</span> rpf_index,</span>
-<span id="cb14-6"><a href="#cb14-6" tabindex="-1"></a>  <span class="at">k =</span> <span class="dv">15</span></span>
-<span id="cb14-7"><a href="#cb14-7" tabindex="-1"></a>)</span></code></pre></div>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" tabindex="-1"></a>search_graph_edges <span class="ot">&lt;-</span> <span class="fu">diff</span>(iris_search_graph<span class="sc">@</span>p)</span>
+<span id="cb13-2"><a href="#cb13-2" tabindex="-1"></a><span class="fu">hist</span>(</span>
+<span id="cb13-3"><a href="#cb13-3" tabindex="-1"></a>  search_graph_edges,</span>
+<span id="cb13-4"><a href="#cb13-4" tabindex="-1"></a>  <span class="at">main =</span> <span class="st">&quot;Distribution of search graph edges&quot;</span>,</span>
+<span id="cb13-5"><a href="#cb13-5" tabindex="-1"></a>  <span class="at">xlab =</span> <span class="st">&quot;# edges&quot;</span></span>
+<span id="cb13-6"><a href="#cb13-6" tabindex="-1"></a>)</span></code></pre></div>
+<p><img role="img" aria-label="Histogram of iris search graph degrees, showing the distribution of edge counts after pruning." src="data:image/png;base64,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" alt="Histogram of iris search graph degrees, showing the distribution of edge counts after pruning." /></p>
+<div class="sourceCode" id="cb14"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" tabindex="-1"></a><span class="fu">range</span>(search_graph_edges)</span>
+<span id="cb14-2"><a href="#cb14-2" tabindex="-1"></a><span class="co">#&gt; [1]  7 17</span></span></code></pre></div>
+<p>The histogram shows how the degrees vary after diversification and
+pruning. The range above gives the smallest and largest degrees for this
+run.</p>
+<div class="sourceCode" id="cb15"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" tabindex="-1"></a>search_nbrs <span class="ot">&lt;-</span> <span class="fu">graph_knn_query</span>(</span>
+<span id="cb15-2"><a href="#cb15-2" tabindex="-1"></a>  <span class="at">query =</span> iris_odd,</span>
+<span id="cb15-3"><a href="#cb15-3" tabindex="-1"></a>  <span class="at">reference =</span> iris_even,</span>
+<span id="cb15-4"><a href="#cb15-4" tabindex="-1"></a>  <span class="at">reference_graph =</span> iris_search_graph,</span>
+<span id="cb15-5"><a href="#cb15-5" tabindex="-1"></a>  <span class="at">init =</span> rpf_index,</span>
+<span id="cb15-6"><a href="#cb15-6" tabindex="-1"></a>  <span class="at">k =</span> <span class="dv">15</span></span>
+<span id="cb15-7"><a href="#cb15-7" tabindex="-1"></a>)</span></code></pre></div>
 </div>
 </div>
 <div id="references" class="section level2 unnumbered">

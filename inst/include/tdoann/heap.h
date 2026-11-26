@@ -22,13 +22,17 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
 // CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// OF SUCH DAMAGE.
+// POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef TDOANN_HEAP_H
 #define TDOANN_HEAP_H
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <numeric>
+#include <utility>
 #include <vector>
 
 #include "parallel.h"
@@ -135,7 +139,6 @@ void sort_heap(NbrHeap &heap, std::size_t n_threads, ProgressBase &progress,
       heap.deheap_sort(i);
     }
   };
-  ExecutionParams exec_params{64};
   dispatch_work(worker, heap.n_points, n_threads, progress, executor);
 }
 
@@ -188,6 +191,15 @@ template <typename T> auto limit_inf() -> T {
   return (std::numeric_limits<T>::infinity)();
 }
 
+namespace detail {
+
+constexpr auto heap_row_offset(std::size_t row, std::size_t width)
+    -> std::size_t {
+  return row * width;
+}
+
+} // namespace detail
+
 // Base class storing neighbor data as a series of heaps
 template <typename Out = float, typename Idx = uint32_t> class NNDHeap {
 public:
@@ -204,9 +216,12 @@ public:
   std::vector<uint8_t> flags;
 
   NNDHeap(std::size_t n_points, std::size_t n_nbrs)
-      : n_points(n_points), n_nbrs(n_nbrs), idx(n_points * n_nbrs, npos()),
-        dist(n_points * n_nbrs, (std::numeric_limits<Out>::infinity)()),
-        n_nbrs1(n_nbrs - 1), flags(n_points * n_nbrs, 0) {}
+      : n_points(n_points), n_nbrs(n_nbrs),
+        idx(detail::heap_row_offset(n_points, n_nbrs), npos()),
+        dist(detail::heap_row_offset(n_points, n_nbrs),
+             (std::numeric_limits<Out>::infinity)()),
+        n_nbrs1(n_nbrs - 1),
+        flags(detail::heap_row_offset(n_points, n_nbrs), 0) {}
 
   NNDHeap(const NNDHeap &) = default;
   auto operator=(const NNDHeap &) -> NNDHeap & = default;
@@ -215,7 +230,7 @@ public:
   ~NNDHeap() = default;
 
   auto contains(Idx row, Idx index) const -> bool {
-    auto start = idx.begin() + row * n_nbrs;
+    auto start = idx.begin() + detail::heap_row_offset(row, n_nbrs);
     auto end = start + n_nbrs;
 
     return std::find(start, end, index) != end;
@@ -223,13 +238,13 @@ public:
 
   // returns true if either p or q would accept a neighbor with distance dist
   auto accepts_either(Idx idx_p, Idx idx_q, const Out &d_pq) const -> bool {
-    return (idx_p < n_points && d_pq < dist[idx_p * n_nbrs]) ||
-           (idx_p != idx_q && idx_q < n_points && d_pq < dist[idx_q * n_nbrs]);
+    return accepts(idx_p, d_pq) || (idx_p != idx_q && accepts(idx_q, d_pq));
   }
 
   // returns true if p would accept a neighbor with distance d
   auto accepts(Idx idx_p, const Out &d_pq) const -> bool {
-    return idx_p < n_points && d_pq < dist[idx_p * n_nbrs];
+    return idx_p < n_points &&
+           d_pq < dist[detail::heap_row_offset(idx_p, n_nbrs)];
   }
 
   auto checked_push_pair(Idx row, const Out &weight, Idx idx) -> uint32_t {
@@ -252,7 +267,7 @@ public:
 
   // This differs from the pynndescent version as it is truly unchecked
   void unchecked_push(Idx row, const Out &weight, Idx index) {
-    std::size_t root = row * n_nbrs;
+    std::size_t root = detail::heap_row_offset(row, n_nbrs);
 
     constexpr uint8_t flag = 1U;
     // insert val at position zero
@@ -293,19 +308,29 @@ public:
   }
 
   void deheap_sort(Idx i) {
-    const std::size_t neighbors_start = i * n_nbrs;
+    const std::size_t neighbors_start = detail::heap_row_offset(i, n_nbrs);
     tdoann::deheap_sort(idx, dist, neighbors_start, neighbors_start + n_nbrs1);
   }
 
-  auto index(Idx i, Idx j) const -> Idx { return idx[i * n_nbrs + j]; }
+  auto index(Idx i, Idx j) const -> Idx {
+    return idx[detail::heap_row_offset(i, n_nbrs) + j];
+  }
 
-  auto distance(Idx i, Idx j) const -> Out { return dist[i * n_nbrs + j]; }
+  auto distance(Idx i, Idx j) const -> Out {
+    return dist[detail::heap_row_offset(i, n_nbrs) + j];
+  }
 
-  auto max_distance(Idx i) const -> Out { return dist[i * n_nbrs]; }
+  auto max_distance(Idx i) const -> Out {
+    return dist[detail::heap_row_offset(i, n_nbrs)];
+  }
 
-  auto is_full(Idx i) const -> bool { return idx[i * n_nbrs] != npos(); }
+  auto is_full(Idx i) const -> bool {
+    return idx[detail::heap_row_offset(i, n_nbrs)] != npos();
+  }
 
-  auto flag(Idx i, Idx j) const -> uint8_t { return flags[i * n_nbrs + j]; }
+  auto flag(Idx i, Idx j) const -> uint8_t {
+    return flags[detail::heap_row_offset(i, n_nbrs) + j];
+  }
 };
 
 // Like NNDHeap, but no flag vector
@@ -324,8 +349,10 @@ struct NNHeap {
   Idx n_nbrs1;
 
   NNHeap(Idx n_points, Idx n_nbrs)
-      : n_points(n_points), n_nbrs(n_nbrs), idx(n_points * n_nbrs, npos()),
-        dist(n_points * n_nbrs, max_dist_func()), n_nbrs1(n_nbrs - 1) {}
+      : n_points(n_points), n_nbrs(n_nbrs),
+        idx(detail::heap_row_offset(n_points, n_nbrs), npos()),
+        dist(detail::heap_row_offset(n_points, n_nbrs), max_dist_func()),
+        n_nbrs1(n_nbrs - 1) {}
 
   NNHeap(const NNHeap &) = default;
   auto operator=(const NNHeap &) -> NNHeap & = default;
@@ -334,7 +361,7 @@ struct NNHeap {
   ~NNHeap() = default;
 
   auto contains(Idx row, Idx index) const -> bool {
-    auto start = idx.begin() + row * n_nbrs;
+    auto start = idx.begin() + detail::heap_row_offset(row, n_nbrs);
     auto end = start + n_nbrs;
 
     return std::find(start, end, index) != end;
@@ -342,7 +369,8 @@ struct NNHeap {
 
   // returns true if idx_p would accept a neighbor with distance d_pq
   auto accepts(Idx idx_p, const Out &d_pq) const -> bool {
-    return idx_p < n_points && d_pq < dist[idx_p * n_nbrs];
+    return idx_p < n_points &&
+           d_pq < dist[detail::heap_row_offset(idx_p, n_nbrs)];
   }
 
   // returns true if either idx_p or idx_q would accept a neighbor with distance
@@ -371,7 +399,7 @@ struct NNHeap {
   }
 
   void unchecked_push(Idx row, const Out &weight, Idx index) {
-    const std::size_t root = row * n_nbrs;
+    const std::size_t root = detail::heap_row_offset(row, n_nbrs);
 
     // insert val at position zero
     dist[root] = weight;
@@ -405,17 +433,25 @@ struct NNHeap {
 
   // NOLINTBEGIN(readability-identifier-length)
   void deheap_sort(Idx i) {
-    const std::size_t neighbors_start = i * n_nbrs;
+    const std::size_t neighbors_start = detail::heap_row_offset(i, n_nbrs);
     tdoann::deheap_sort(idx, dist, neighbors_start, neighbors_start + n_nbrs1);
   }
 
-  auto index(Idx i, Idx j) const -> Idx { return idx[i * n_nbrs + j]; }
+  auto index(Idx i, Idx j) const -> Idx {
+    return idx[detail::heap_row_offset(i, n_nbrs) + j];
+  }
 
-  auto distance(Idx i, Idx j) const -> Out { return dist[i * n_nbrs + j]; }
+  auto distance(Idx i, Idx j) const -> Out {
+    return dist[detail::heap_row_offset(i, n_nbrs) + j];
+  }
 
-  auto max_distance(Idx i) const -> Out { return dist[i * n_nbrs]; }
+  auto max_distance(Idx i) const -> Out {
+    return dist[detail::heap_row_offset(i, n_nbrs)];
+  }
 
-  auto is_full(Idx i) const -> bool { return idx[i * n_nbrs] != npos(); }
+  auto is_full(Idx i) const -> bool {
+    return idx[detail::heap_row_offset(i, n_nbrs)] != npos();
+  }
   // NOLINTEND(readability-identifier-length)
 };
 

@@ -22,11 +22,13 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
 // CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// OF SUCH DAMAGE.
+// POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef TDOANN_PARALLEL_H
 #define TDOANN_PARALLEL_H
 
+#include <algorithm>
+#include <cstddef>
 #include <functional>
 #include <utility>
 
@@ -86,6 +88,10 @@ template <typename Worker>
 void dispatch_work(Worker &&worker, std::size_t n, std::size_t n_threads,
                    const ExecutionParams &execution_params,
                    ProgressBase &progress, const Executor &executor) {
+  if (n == 0) {
+    return;
+  }
+
   if (n_threads == 0) {
     dispatch_work(worker, n, execution_params, progress);
     return;
@@ -140,6 +146,10 @@ void dispatch_work(Worker &&worker, AfterWorker &after_worker, std::size_t n,
                    std::size_t n_threads,
                    const ExecutionParams &execution_params,
                    ProgressBase &progress, const Executor &executor) {
+  if (n == 0) {
+    return;
+  }
+
   if (n_threads == 0) {
     dispatch_work(worker, after_worker, n, execution_params, progress);
     return;
@@ -172,6 +182,10 @@ template <typename Worker>
 void dispatch_work(Worker &worker, std::size_t n,
                    const ExecutionParams &execution_params,
                    ProgressBase &progress) {
+  if (n == 0) {
+    return;
+  }
+
   const auto &batch_size = execution_params.get_batch_size(n);
   auto n_batches = (n + batch_size - 1) / batch_size;
   progress.set_n_batches(n_batches);
@@ -190,6 +204,10 @@ template <typename Worker, typename AfterWorker>
 void dispatch_work(Worker &worker, AfterWorker &after_worker, std::size_t n,
                    const ExecutionParams &execution_params,
                    ProgressBase &progress) {
+  if (n == 0) {
+    return;
+  }
+
   const auto &batch_size = execution_params.get_batch_size(n);
   auto n_batches = (n + batch_size - 1) / batch_size;
   progress.set_n_batches(n_batches);

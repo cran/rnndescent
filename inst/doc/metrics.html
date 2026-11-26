@@ -382,32 +382,48 @@ so you may want to look in that reference for an exact definition.</p>
 <li><code>&quot;chebyshev&quot;</code>: <a href="https://en.wikipedia.org/wiki/Chebyshev_distance">Chebyshev</a>,
 also known as the L-infinity norm (<span class="math inline">\(L_\infty\)</span>).</li>
 <li><code>&quot;correlation&quot;</code>: 1 minus the <a href="https://en.wikipedia.org/wiki/Pearson_correlation_coefficient">Pearson
-correlation</a>.</li>
+correlation</a>. The distance between two all-zero vectors is 0 for
+dense and sparse input. This is a package convention: Pearson
+correlation is undefined for zero-variance vectors.</li>
 <li><code>&quot;cosine&quot;</code>: 1 minus the <a href="https://en.wikipedia.org/wiki/Cosine_similarity">cosine
 similarity</a>.</li>
-<li><code>&quot;dice&quot;</code>: the <a href="https://en.wikipedia.org/wiki/S%C3%B8rensen%E2%80%93Dice_coefficient">Dice
+<li><code>&quot;dice&quot;</code>: 1 minus the <a href="https://en.wikipedia.org/wiki/S%C3%B8rensen%E2%80%93Dice_coefficient">Dice
 coefficient</a>, also known as the Sørensen–Dice coefficient. Intended
 for binary data.</li>
+<li><code>&quot;dot&quot;</code>: 1 minus the dot product after normalizing each
+vector to unit length, capped at 1. Both dense and sparse vectors are
+normalized, so their magnitudes don’t affect the distance. For nonzero
+vectors, this agrees with <code>&quot;cosine&quot;</code> when the cosine
+similarity is positive. Otherwise <code>&quot;dot&quot;</code> returns 1: for
+example, opposite vectors have a <code>&quot;cosine&quot;</code> distance of 2 but
+a <code>&quot;dot&quot;</code> distance of 1. If either or both vectors are zero,
+the distance is also 1. Logical matrices use the same calculation on 0s
+and 1s.</li>
 <li><code>&quot;euclidean&quot;</code>: the Euclidean distance, also known as the
 L2 norm.</li>
 <li><code>&quot;hamming&quot;</code>: the <a href="https://en.wikipedia.org/wiki/Hamming_distance">Hamming
-distance</a>. Intended for binary data.</li>
+distance</a>, the fraction of features with unequal values. Numeric
+values need not be binary.</li>
 <li><code>&quot;haversine&quot;</code>: the Haversine (great-circle) distance for
-2D latitude and longitude coordinates in <em>radians</em>. This is for
+2D latitude and longitude coordinates in <em>radians</em>. The returned
+distance is an angle in radians on the unit sphere. This is for
 compatibility with the PyNNDescent implementation, but be aware that
 functions like <code>distHaversine</code> in the <a href="https://CRAN.R-project.org/package=geosphere">geosphere</a>
 package expect latitude and longitude in <em>degrees</em>. An error will
 be raised if values that appear to be supplied in degrees are
 encountered.</li>
 <li><code>&quot;hellinger&quot;</code>: the <a href="https://en.wikipedia.org/wiki/Hellinger_distance">Hellinger
-distance</a>. This is intended to be used with a probability
-distribution, so ensure that each row of your input data contains
-non-negative values which sum to <code>1</code>.</li>
-<li><code>&quot;jaccard&quot;</code>: the <a href="https://en.wikipedia.org/wiki/Jaccard_index">Jaccard index</a>,
+distance</a>. This is intended for probability distributions: use
+non-negative values, such as probabilities or counts. The calculation
+accounts for each row’s total, so the values need not sum to
+<code>1</code>.</li>
+<li><code>&quot;jaccard&quot;</code>: 1 minus the <a href="https://en.wikipedia.org/wiki/Jaccard_index">Jaccard index</a>,
 also known as the Tanimoto coefficient. Intended for binary data.</li>
 <li><code>&quot;jensenshannon&quot;</code>: the <a href="https://en.wikipedia.org/wiki/Jensen%E2%80%93Shannon_divergence">Jensen-Shannon
-divergence</a>. Like <code>&quot;hellinger&quot;</code>, this is intended to be
-used with a probability distribution.</li>
+divergence</a>. Like <code>&quot;hellinger&quot;</code>, this is intended for
+non-negative probability weights or counts. The calculation adds a small
+value to the components and normalizes them before computing the
+divergence.</li>
 <li><code>&quot;kulsinski&quot;</code>: the Kulsinski dissimilarity as defined in
 the Python package <code>scipy.spatial.distance.kulsinski</code> (this
 function is deprecated in scipy). Intended for binary data.</li>
@@ -415,6 +431,12 @@ function is deprecated in scipy). Intended for binary data.</li>
 <li><code>&quot;manhattan&quot;</code>: the Manhattan distance, also known as the
 L1 norm or <a href="https://en.wikipedia.org/wiki/Taxicab_geometry">Taxicab
 distance</a>.</li>
+<li><code>&quot;matching&quot;</code>: the fraction of features for which one
+value is zero and the other is nonzero. It accepts dense and sparse
+numeric input as well as logical matrices. Two nonzero values match,
+even if they differ: for example, 2 and 7 match here but not with
+<code>&quot;hamming&quot;</code>. For logical or 0/1 data, the two distances
+agree.</li>
 <li><code>&quot;rogerstanimoto&quot;</code>: the <a href="https://en.wikipedia.org/wiki/Qualitative_variation#Rogers%E2%80%93Tanimoto_coefficient">Rogers-Tanimoto
 coefficient</a>.</li>
 <li><code>&quot;russellrao&quot;</code>: the <a href="https://en.wikipedia.org/wiki/Qualitative_variation#Russel%E2%80%93Rao_coefficient">Russell-Rao
@@ -425,34 +447,101 @@ coefficient</a>. Intended for binary data.</li>
 <li><code>&quot;spearmanr&quot;</code>: 1 minus the <a href="https://en.wikipedia.org/wiki/Spearman%27s_rank_correlation_coefficient">Spearman
 rank correlation</a></li>
 <li><code>&quot;symmetrickl&quot;</code> symmetrized version of the <a href="https://en.wikipedia.org/wiki/Kullback%E2%80%93Leibler_divergence">Kullback-Leibler
-divergence</a>. The symmetrization is calculated as <span class="math inline">\(D_{KL}(P||Q) + D_{KL}(Q||P)\)</span>.</li>
+divergence</a>. The symmetrization is calculated as <span class="math inline">\(D_{KL}(P||Q) + D_{KL}(Q||P)\)</span>. Like
+<code>&quot;jensenshannon&quot;</code>, this uses non-negative probability weights
+or counts, adds a small value to the components, and normalizes them
+before computing the divergence.</li>
+<li><code>&quot;trueangular&quot;</code>: the angle between vectors divided by
+<span class="math inline">\(\pi\)</span>, from 0 for the same direction
+to 1 for opposite directions. By package convention, the distance is 0
+between two zero vectors and 1/2 when exactly one vector is zero.</li>
 <li><code>&quot;tsss&quot;</code> the Triangle Area Similarity-Sector Area
 Similarity or TS-SS metric as described in <span class="citation">(Heidarian and Dinneen 2016)</span>. Compared to
 results in PyNNDescent (as of version 0.5.11), distances are smaller by
 a factor of 2 in this package. This does not affect the returned nearest
 neighbors, only the distances. Multiply them by 2 if you need to get
-closer to the PyNNDescent results.</li>
+closer to the PyNNDescent results. By package convention, the distance
+is 0 whenever either vector is all zero, for dense and sparse input. A
+zero vector therefore ties at distance 0 with every vector; no ordering
+among tied neighbors is guaranteed.</li>
 <li><code>&quot;yule&quot;</code> the Yule dissimilarity. Intended for binary
 data.</li>
 </ul>
-<p>For non-sparse data, the following variants are available with
-preprocessing: this trades memory for a potential speed up during the
-distance calculation. Some minor numerical differences should be
-expected compared to the non-preprocessed versions:</p>
+<p>For non-sparse data, the following variants preprocess each row once.
+This trades memory for a potential speed up during the distance
+calculation:</p>
 <ul>
-<li><code>&quot;cosine-preprocess&quot;</code>: <code>cosine</code> with
-preprocessing.</li>
-<li><code>&quot;correlation-preprocess&quot;</code>: <code>correlation</code> with
-preprocessing.</li>
+<li><code>&quot;cosine-preprocess&quot;</code>: normalize each vector to unit
+length before computing cosine distance.</li>
+<li><code>&quot;correlation-preprocess&quot;</code>: center and normalize each
+vector before computing correlation distance.</li>
 </ul>
+<p>Both calculate distances directly on the ordinary scale; no inverse
+transform is needed. Minor numerical differences from the
+non-preprocessed versions can be expected. Their conventions also differ
+for zero or constant vectors: two zero vectors have
+<code>&quot;cosine&quot;</code> distance 0 but <code>&quot;cosine-preprocess&quot;</code>
+distance 1; two constant vectors have <code>&quot;correlation&quot;</code>
+distance 0 but <code>&quot;correlation-preprocess&quot;</code> distance 1. When
+exactly one vector is zero (for cosine) or constant (for correlation),
+both versions return 1.</p>
+<p>The internal names <code>&quot;alternative-cosine&quot;</code>,
+<code>&quot;alternative-dot&quot;</code>, <code>&quot;alternative-hellinger&quot;</code> and
+<code>&quot;alternative-jaccard&quot;</code> are also currently accepted, but
+return transformed distances when selected directly. Use the ordinary
+names above. Where available, <code>use_alt_metric</code> lets the
+implementation use a faster internal calculation and convert the results
+back to the ordinary distance scale. Currently this applies to
+Euclidean, dot, Hellinger and Jaccard distances; it has no effect on
+cosine, correlation, or their preprocessing variants.</p>
+<div id="numerical-precision" class="section level2">
+<h2>Numerical precision</h2>
+<p>Numeric coordinates are converted to single precision
+(<code>float</code>) in the native code, which also stores distances in
+single precision. The returned <code>dist</code> matrices use R’s double
+precision, but that does not recover information lost during conversion
+or calculation. Brute force compares every pair of points; “exact”
+describes the search, not double-precision numerical accuracy.</p>
+<p>For example, these two values differ by 1 in R, but become the same
+number in single precision:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a>query <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fl">1e8</span>)</span>
+<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>reference <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fl">1e8</span> <span class="sc">+</span> <span class="dv">1</span>)</span>
+<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a><span class="fu">c</span>(</span>
+<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a>  <span class="at">R =</span> <span class="fu">abs</span>(reference <span class="sc">-</span> query),</span>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a>  <span class="at">rnndescent =</span> <span class="fu">brute_force_knn_query</span>(query, reference, <span class="at">k =</span> <span class="dv">1</span>)<span class="sc">$</span>dist</span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a>)</span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="co">#&gt;          R rnndescent </span></span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co">#&gt;          1          0</span></span></code></pre></div>
+<p>For Euclidean data with a large common offset, subtracting that
+offset from both query and reference in R can help retain small
+differences. A common translation preserves Euclidean distances but
+generally changes cosine and probability distances, so the choice of
+preprocessing depends on the metric.</p>
+<p>Numeric feature inputs must contain only finite values.
+<code>NA</code>, <code>NaN</code>, <code>Inf</code> and
+<code>-Inf</code> raise an error for both dense and sparse data,
+including query and reference inputs.</p>
+<p>Very large finite inputs can also overflow intermediate calculations
+and leave missing neighbors (<code>idx = 0</code>,
+<code>dist = NA</code>), including with brute force. This remains an
+unresolved numerical limitation.</p>
+</div>
 <div id="specialized-binary-metrics" class="section level2">
 <h2>Specialized Binary Metrics</h2>
+<p>Logical feature matrices must contain only <code>TRUE</code> and
+<code>FALSE</code>. Missing logical values (<code>NA</code>) raise an
+error when the features are used, with both ordinary and specialized
+binary metrics. If treating missing values as <code>FALSE</code> is
+appropriate for your data, replace them explicitly before calling, for
+example with <code>x[is.na(x)] &lt;- FALSE</code>.</p>
 <p>Some metrics are intended for use with binary data. This means
 that:</p>
 <ul>
-<li>Your numeric data should consist of only two distinct values,
-typically <code>0</code> and <code>1</code>. You will get unpredictable
-results otherwise.</li>
+<li>For the binary metrics, use numeric <code>0</code> and
+<code>1</code> or a logical matrix. These metrics generally treat zero
+as absent and nonzero as present, so values <code>1</code> and
+<code>2</code> are both present. Hamming also supports nonbinary numeric
+values and compares the actual values.</li>
 <li>If you provide the data as a <code>logical</code> matrix, a much
 faster implementation is used.</li>
 </ul>
@@ -471,31 +560,31 @@ faster implementation is used.</li>
 </ul>
 <p>Here’s an example of using binary data stored as 0s and 1s with the
 <code>&quot;hamming&quot;</code> metric:</p>
-<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">42</span>)</span>
-<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a>binary_data <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">sample</span>(<span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">1</span>), <span class="dv">100</span>, <span class="at">replace =</span> <span class="cn">TRUE</span>), <span class="at">ncol =</span> <span class="dv">10</span>)</span>
-<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a><span class="fu">head</span>(binary_data)</span>
-<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a><span class="co">#&gt;      [,1] [,2] [,3] [,4] [,5] [,6] [,7] [,8] [,9] [,10]</span></span>
-<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a><span class="co">#&gt; [1,]    0    0    0    1    0    1    0    1    1     0</span></span>
-<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="co">#&gt; [2,]    0    1    0    1    0    0    1    0    0     1</span></span>
-<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="co">#&gt; [3,]    0    0    0    1    1    1    1    1    1     0</span></span>
-<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="co">#&gt; [4,]    0    1    0    1    1    1    1    1    0     1</span></span>
-<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="co">#&gt; [5,]    1    0    0    0    1    1    1    1    0     1</span></span>
-<span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a><span class="co">#&gt; [6,]    1    0    1    1    1    1    1    1    1     1</span></span></code></pre></div>
-<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a>nn <span class="ot">&lt;-</span> <span class="fu">brute_force_knn</span>(binary_data, <span class="at">k =</span> <span class="dv">4</span>, <span class="at">metric =</span> <span class="st">&quot;hamming&quot;</span>)</span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">42</span>)</span>
+<span id="cb3-2"><a href="#cb3-2" tabindex="-1"></a>binary_data <span class="ot">&lt;-</span> <span class="fu">matrix</span>(<span class="fu">sample</span>(<span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">1</span>), <span class="dv">100</span>, <span class="at">replace =</span> <span class="cn">TRUE</span>), <span class="at">ncol =</span> <span class="dv">10</span>)</span>
+<span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a><span class="fu">head</span>(binary_data)</span>
+<span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="co">#&gt;      [,1] [,2] [,3] [,4] [,5] [,6] [,7] [,8] [,9] [,10]</span></span>
+<span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="co">#&gt; [1,]    0    0    0    1    0    1    0    1    1     0</span></span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="co">#&gt; [2,]    0    1    0    1    0    0    1    0    0     1</span></span>
+<span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a><span class="co">#&gt; [3,]    0    0    0    1    1    1    1    1    1     0</span></span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a><span class="co">#&gt; [4,]    0    1    0    1    1    1    1    1    0     1</span></span>
+<span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a><span class="co">#&gt; [5,]    1    0    0    0    1    1    1    1    0     1</span></span>
+<span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a><span class="co">#&gt; [6,]    1    0    1    1    1    1    1    1    1     1</span></span></code></pre></div>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>nn <span class="ot">&lt;-</span> <span class="fu">brute_force_knn</span>(binary_data, <span class="at">k =</span> <span class="dv">4</span>, <span class="at">metric =</span> <span class="st">&quot;hamming&quot;</span>)</span></code></pre></div>
 <p>Now let’s convert it to a logical matrix:</p>
-<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>logical_data <span class="ot">&lt;-</span> binary_data <span class="sc">==</span> <span class="dv">1</span></span>
-<span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a><span class="fu">head</span>(logical_data)</span>
-<span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a><span class="co">#&gt;       [,1]  [,2]  [,3]  [,4]  [,5]  [,6]  [,7]  [,8]  [,9] [,10]</span></span>
-<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="co">#&gt; [1,] FALSE FALSE FALSE  TRUE FALSE  TRUE FALSE  TRUE  TRUE FALSE</span></span>
-<span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="co">#&gt; [2,] FALSE  TRUE FALSE  TRUE FALSE FALSE  TRUE FALSE FALSE  TRUE</span></span>
-<span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a><span class="co">#&gt; [3,] FALSE FALSE FALSE  TRUE  TRUE  TRUE  TRUE  TRUE  TRUE FALSE</span></span>
-<span id="cb4-7"><a href="#cb4-7" tabindex="-1"></a><span class="co">#&gt; [4,] FALSE  TRUE FALSE  TRUE  TRUE  TRUE  TRUE  TRUE FALSE  TRUE</span></span>
-<span id="cb4-8"><a href="#cb4-8" tabindex="-1"></a><span class="co">#&gt; [5,]  TRUE FALSE FALSE FALSE  TRUE  TRUE  TRUE  TRUE FALSE  TRUE</span></span>
-<span id="cb4-9"><a href="#cb4-9" tabindex="-1"></a><span class="co">#&gt; [6,]  TRUE FALSE  TRUE  TRUE  TRUE  TRUE  TRUE  TRUE  TRUE  TRUE</span></span></code></pre></div>
-<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>logical_nn <span class="ot">&lt;-</span> <span class="fu">brute_force_knn</span>(logical_data, <span class="at">k =</span> <span class="dv">4</span>, <span class="at">metric =</span> <span class="st">&quot;hamming&quot;</span>)</span></code></pre></div>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>logical_data <span class="ot">&lt;-</span> binary_data <span class="sc">==</span> <span class="dv">1</span></span>
+<span id="cb5-2"><a href="#cb5-2" tabindex="-1"></a><span class="fu">head</span>(logical_data)</span>
+<span id="cb5-3"><a href="#cb5-3" tabindex="-1"></a><span class="co">#&gt;       [,1]  [,2]  [,3]  [,4]  [,5]  [,6]  [,7]  [,8]  [,9] [,10]</span></span>
+<span id="cb5-4"><a href="#cb5-4" tabindex="-1"></a><span class="co">#&gt; [1,] FALSE FALSE FALSE  TRUE FALSE  TRUE FALSE  TRUE  TRUE FALSE</span></span>
+<span id="cb5-5"><a href="#cb5-5" tabindex="-1"></a><span class="co">#&gt; [2,] FALSE  TRUE FALSE  TRUE FALSE FALSE  TRUE FALSE FALSE  TRUE</span></span>
+<span id="cb5-6"><a href="#cb5-6" tabindex="-1"></a><span class="co">#&gt; [3,] FALSE FALSE FALSE  TRUE  TRUE  TRUE  TRUE  TRUE  TRUE FALSE</span></span>
+<span id="cb5-7"><a href="#cb5-7" tabindex="-1"></a><span class="co">#&gt; [4,] FALSE  TRUE FALSE  TRUE  TRUE  TRUE  TRUE  TRUE FALSE  TRUE</span></span>
+<span id="cb5-8"><a href="#cb5-8" tabindex="-1"></a><span class="co">#&gt; [5,]  TRUE FALSE FALSE FALSE  TRUE  TRUE  TRUE  TRUE FALSE  TRUE</span></span>
+<span id="cb5-9"><a href="#cb5-9" tabindex="-1"></a><span class="co">#&gt; [6,]  TRUE FALSE  TRUE  TRUE  TRUE  TRUE  TRUE  TRUE  TRUE  TRUE</span></span></code></pre></div>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a>logical_nn <span class="ot">&lt;-</span> <span class="fu">brute_force_knn</span>(logical_data, <span class="at">k =</span> <span class="dv">4</span>, <span class="at">metric =</span> <span class="st">&quot;hamming&quot;</span>)</span></code></pre></div>
 <p>The results will be the same:</p>
-<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="fu">all.equal</span>(nn, logical_nn)</span>
-<span id="cb6-2"><a href="#cb6-2" tabindex="-1"></a><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="fu">all.equal</span>(nn, logical_nn)</span>
+<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
 <p>but on a real-world dataset, the logical version will be much
 faster.</p>
 </div>

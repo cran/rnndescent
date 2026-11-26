@@ -112,7 +112,6 @@ private:
   std::shared_ptr<dqrng::random_64bit_generator> rng;
 
 public:
-
   // Not thread safe
   DQIntSampler() : rng(create_dqrng()) {
     auto seed1 = r_seed();
@@ -124,12 +123,13 @@ public:
     rng->seed(seed, seed2);
   }
 
-  // Generates a random integer in range [0, n)
-  Int rand_int(Int n) override {
-    std::vector<Int> result;
-    dqsample::sample<Int>(result, rng, n, 1, false);
-    return result[0];
+  template <typename Consume>
+  void visit_shuffle_prefix(Int size, const Consume &consume) {
+    dqsample::visit_shuffle_prefix(*rng, size, consume);
   }
+
+  // Generates a random integer in range [0, n)
+  Int rand_int(Int n) override { return static_cast<Int>((*rng)(n)); }
 
   // Generates n_ints random integers in range [0, max_val)
   std::vector<Int> sample(int max_val, int n_ints) override {
@@ -138,7 +138,6 @@ public:
     return result;
   }
 };
-
 
 template <typename Int, template <typename> class RNG>
 class ParallelIntRNGAdapter : public tdoann::ParallelRandomIntProvider<Int> {
@@ -156,10 +155,14 @@ public:
   // parameters (e.g. the end of the window size) so that you get different
   // random numbers in each window, but they are related to the random number
   // seed
+  auto get_instance(uint64_t seed2) -> std::unique_ptr<RNG<Int>> {
+    return std::make_unique<RNG<Int>>(seed, seed2);
+  }
+
   std::unique_ptr<tdoann::RandomIntGenerator<Int>>
-    get_parallel_instance(uint64_t seed2) override {
-      return std::make_unique<RNG<Int>>(seed, seed2);
-    }
+  get_parallel_instance(uint64_t seed2) override {
+    return get_instance(seed2);
+  }
 };
 
 } // namespace rnndescent

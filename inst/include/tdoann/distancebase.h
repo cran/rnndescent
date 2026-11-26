@@ -22,13 +22,15 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
 // CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 // ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-// OF SUCH DAMAGE.
+// POSSIBILITY OF SUCH DAMAGE.
 
 #ifndef TDOANN_DISTANCEBASE_H
 #define TDOANN_DISTANCEBASE_H
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "distance.h"
@@ -62,7 +64,7 @@ class VectorDistance : public BaseDistance<Out, Idx> {
 public:
   using Iterator = typename std::vector<In>::const_iterator;
 
-  virtual ~VectorDistance() = default;
+  ~VectorDistance() override = default;
 
   // return iterator pointing at the ith data point
   virtual auto get_x(Idx i) const -> Iterator = 0;
@@ -100,13 +102,13 @@ public:
   using Iterator = typename std::vector<In>::const_iterator;
   using DistanceFunc = Out (*)(Iterator, Iterator, Iterator);
 
-  virtual ~SelfDistanceCalculator() = default;
+  ~SelfDistanceCalculator() override = default;
 
   template <typename VecIn>
   SelfDistanceCalculator(VecIn &&data, std::size_t ndim,
                          DistanceFunc distance_func,
                          PreprocessFunc<In> preprocess_func = nullptr)
-      : x(std::move(data)), nx(x.size() / ndim), ndim(ndim),
+      : x(std::forward<VecIn>(data)), nx(x.size() / ndim), ndim(ndim),
         distance_func(distance_func) {
     if (preprocess_func) {
       preprocess_func(x, ndim);
@@ -140,7 +142,7 @@ public:
   using Iterator = typename std::vector<In>::const_iterator;
   using DistanceFunc = Out (*)(Iterator, Iterator, Iterator);
 
-  virtual ~QueryDistanceCalculator() = default;
+  ~QueryDistanceCalculator() override = default;
 
   template <typename VecIn>
   QueryDistanceCalculator(VecIn &&xdata, VecIn &&ydata, std::size_t ndim,

@@ -368,21 +368,21 @@ nearest neighbors, based heavily on the Python package <a href="https://github.c
 independent reimplementation written in C++. It uses the following
 techniques:</p>
 <ol style="list-style-type: decimal">
-<li>Initialization by creating a forest of random project trees <span class="citation">(Dasgupta and Freund 2008)</span>.</li>
+<li>Initialization by creating a forest of random projection trees <span class="citation">(Dasgupta and Freund 2008)</span>.</li>
 <li>Optimization by using nearest neighbor descent <span class="citation">(Dong et al. 2011)</span>.</li>
 <li>For building a search graph, graph diversification techniques from
 FANNG <span class="citation">(Harwood and Drummond 2016)</span>.</li>
 <li>For querying new data, the back-tracking search from NGT <span class="citation">(Iwasaki and Miyazaki 2018)</span> (without dynamic
 degree-adjustment).</li>
 </ol>
-<p>The easiest way to find k-nearest neighbors and query new data is to
-use the <code>rnnd_knn</code> function, which combine several of the
-available techniques into sensible defaults use the
-<code>rnnd_build</code> and <code>rnnd_query</code> functions. For
+<p>The easiest way to find k-nearest neighbors is to use
+<code>rnnd_knn</code>. To query new data, use <code>rnnd_build</code> to
+build an index and <code>rnnd_query</code> to search it. These functions
+combine several of the available techniques with sensible defaults. For
 greater flexibility, the underlying functions used by
 <code>rnnd_build</code> and <code>rnnd_query</code> can be used
 directly. The other vignettes in this package describe their use and go
-into more detail about the how the methods work.</p>
+into more detail about how the methods work.</p>
 <div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="fu">library</span>(rnndescent)</span></code></pre></div>
 <div id="find-the-k-nearest-neighbors" class="section level2">
 <h2>Find the k-nearest neighbors</h2>
@@ -403,9 +403,9 @@ usual in R, these are 1-indexed.</li>
 <span id="cb3-3"><a href="#cb3-3" tabindex="-1"></a>})</span>
 <span id="cb3-4"><a href="#cb3-4" tabindex="-1"></a><span class="co">#&gt; $idx</span></span>
 <span id="cb3-5"><a href="#cb3-5" tabindex="-1"></a><span class="co">#&gt;      [,1] [,2] [,3] [,4] [,5]</span></span>
-<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="co">#&gt; [1,]    1   18    5   29   28</span></span>
+<span id="cb3-6"><a href="#cb3-6" tabindex="-1"></a><span class="co">#&gt; [1,]    1   18    5   29   40</span></span>
 <span id="cb3-7"><a href="#cb3-7" tabindex="-1"></a><span class="co">#&gt; [2,]    2   13   46   35   10</span></span>
-<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a><span class="co">#&gt; [3,]    3   48    4    7   46</span></span>
+<span id="cb3-8"><a href="#cb3-8" tabindex="-1"></a><span class="co">#&gt; [3,]    3   48    4    7   13</span></span>
 <span id="cb3-9"><a href="#cb3-9" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb3-10"><a href="#cb3-10" tabindex="-1"></a><span class="co">#&gt; $dist</span></span>
 <span id="cb3-11"><a href="#cb3-11" tabindex="-1"></a><span class="co">#&gt;      [,1]      [,2]      [,3]      [,4]      [,5]</span></span>
@@ -418,14 +418,14 @@ usual in R, these are 1-indexed.</li>
 <h2>Build an Index</h2>
 <p><code>rnnd_knn</code> returns the k-nearest neighbors, but does not
 return any “index” that you can use to query new data. To do that, use
-<code>rnnd_build</code>. Normally you would query the index with
+<code>rnnd_build</code>. Normally you would query the index with data
 different from that which you used to build the index, so let’s split
 <code>iris</code> up:</p>
 <div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a>iris_even <span class="ot">&lt;-</span> iris[<span class="fu">seq_len</span>(<span class="fu">nrow</span>(iris)) <span class="sc">%%</span> <span class="dv">2</span> <span class="sc">==</span> <span class="dv">0</span>, ]</span>
 <span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a>iris_odd <span class="ot">&lt;-</span> iris[<span class="fu">seq_len</span>(<span class="fu">nrow</span>(iris)) <span class="sc">%%</span> <span class="dv">2</span> <span class="sc">==</span> <span class="dv">1</span>, ]</span></code></pre></div>
 <div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" tabindex="-1"></a>iris_index <span class="ot">&lt;-</span> <span class="fu">rnnd_build</span>(iris_even, <span class="at">k =</span> <span class="dv">5</span>)</span></code></pre></div>
 <p>The index is also a list but with a lot more components (none of
-which are intended for manual examination), apart from the the neighbor
+which are intended for manual examination), apart from the neighbor
 graph which can be found under the <code>graph</code> component in the
 same format as the return value of <code>rnnd_knn</code>:</p>
 <div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" tabindex="-1"></a><span class="fu">lapply</span>(iris_index<span class="sc">$</span>graph, <span class="cf">function</span>(x) {</span>
@@ -461,13 +461,17 @@ can get <strong>very</strong> large, especially if you set
 <span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a><span class="co">#&gt;      [,1] [,2] [,3] [,4] [,5]</span></span>
 <span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a><span class="co">#&gt; [1,]    9   20   14    4   25</span></span>
 <span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a><span class="co">#&gt; [2,]   24    2   23   15    1</span></span>
-<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a><span class="co">#&gt; [3,]   19    9    4   14   20</span></span>
+<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a><span class="co">#&gt; [3,]   19    9    4   20   14</span></span>
 <span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a><span class="co">#&gt; </span></span>
 <span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a><span class="co">#&gt; $dist</span></span>
 <span id="cb7-16"><a href="#cb7-16" tabindex="-1"></a><span class="co">#&gt;           [,1]      [,2]      [,3]      [,4]      [,5]</span></span>
 <span id="cb7-17"><a href="#cb7-17" tabindex="-1"></a><span class="co">#&gt; [1,] 0.1000000 0.1414213 0.1414213 0.1732050 0.2236068</span></span>
 <span id="cb7-18"><a href="#cb7-18" tabindex="-1"></a><span class="co">#&gt; [2,] 0.1414213 0.2449490 0.2645753 0.3000001 0.3000002</span></span>
 <span id="cb7-19"><a href="#cb7-19" tabindex="-1"></a><span class="co">#&gt; [3,] 0.1414213 0.1732050 0.2236066 0.2449488 0.2449488</span></span></code></pre></div>
+<p>If you’ll query the same index repeatedly, use
+<code>rnnd_prepare()</code> once and pass the returned handle to
+<code>rnnd_query()</code>. See <code>?rnnd_prepare</code> for supported
+indexes.</p>
 <p>You don’t need to keep the data that was used to build the index
 around, because internally, the index stores that (that’s one of the
 reasons the index can get large).</p>
@@ -519,8 +523,10 @@ other nearest neighbor packages. See the <a href="metrics.html">metrics</a> vign
 <h2>Supported Data Types</h2>
 <ul>
 <li>Dense matrices and data frames.</li>
-<li>Sparse matrices, in the <code>dgCMatrix</code>. All the same
-distances are supported as for dense matrices.</li>
+<li>Sparse matrices in <code>dgCMatrix</code>, <code>dgRMatrix</code>,
+or <code>dgTMatrix</code> form. The main distances supported for dense
+matrices are also available for sparse matrices, except for Haversine.
+The optional preprocessing variants are dense-only.</li>
 <li>Additionally, for dense binary data, if you supply it as a
 <code>logical</code> matrix, then for certain distances intended for
 binary data, specialized functions will be used to speed up the
@@ -544,7 +550,7 @@ and Low Dimensional Manifolds.”</span> <em>Proceedings of the Fortieth
 Annual ACM Symposium on Theory of Computing</em>, 537–46.
 </div>
 <div id="ref-dong2011efficient" class="csl-entry">
-Dong, Wei, Charikar Moses, and Kai Li. 2011. <span>“Efficient k-Nearest
+Dong, Wei, Moses Charikar, and Kai Li. 2011. <span>“Efficient k-Nearest
 Neighbor Graph Construction for Generic Similarity Measures.”</span>
 <em>Proceedings of the 20th International Conference on World Wide
 Web</em>, 577–86.
